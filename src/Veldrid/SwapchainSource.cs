@@ -24,8 +24,8 @@ namespace Veldrid
         /// <summary>
         /// Creates a new SwapchainSource for a UWP SwapChain panel.
         /// </summary>
-        /// <param name="swapChainPanel">A COM object which must implement the <see cref="SharpDX.DXGI.ISwapChainPanelNative"/>
-        /// or <see cref="SharpDX.DXGI.ISwapChainBackgroundPanelNative"/> interface. Generally, this should be a SwapChainPanel
+        /// <param name="swapChainPanel">A COM object which must implement the <see cref="Vortice.DXGI.ISwapChainPanelNative"/>
+        /// or <see cref="Vortice.DXGI.ISwapChainBackgroundPanelNative"/> interface. Generally, this should be a SwapChainPanel
         /// or SwapChainBackgroundPanel contained in your application window.</param>
         /// <param name="logicalDpi">The logical DPI of the swapchain panel.</param>
         /// <returns>A new SwapchainSource which can be used to create a <see cref="Swapchain"/> for the given UWP panel.
@@ -41,6 +41,16 @@ namespace Veldrid
         /// <returns>A new SwapchainSource which can be used to create a <see cref="Swapchain"/> for the given Xlib window.
         /// </returns>
         public static SwapchainSource CreateXlib(IntPtr display, IntPtr window) => new XlibSwapchainSource(display, window);
+
+        /// <summary>
+        /// Creates a new SwapchainSource from the given Wayland information.
+        /// </summary>
+        /// <param name="display">The Wayland display proxy.</param>
+        /// <param name="surface">The Wayland surface proxy to map.</param>
+        /// <returns>A new SwapchainSource which can be used to create a <see cref="Swapchain"/> for the given Wayland surface.
+        /// </returns>
+        public static SwapchainSource CreateWayland(IntPtr display, IntPtr surface) => new WaylandSwapchainSource(display, surface);
+
 
         /// <summary>
         /// Creates a new SwapchainSource for the given NSWindow.
@@ -68,6 +78,15 @@ namespace Veldrid
         /// <see cref="GraphicsDevice"/> for the given Android Surface.</returns>
         public static SwapchainSource CreateAndroidSurface(IntPtr surfaceHandle, IntPtr jniEnv)
             => new AndroidSurfaceSwapchainSource(surfaceHandle, jniEnv);
+
+        /// <summary>
+        /// Creates a new SwapchainSource for the given NSView.
+        /// </summary>
+        /// <param name="nsView">A pointer to an NSView.</param>
+        /// <returns>A new SwapchainSource which can be used to create a Metal <see cref="Swapchain"/> for the given NSView.
+        /// </returns>
+        public static SwapchainSource CreateNSView(IntPtr nsView)
+            => new NSViewSwapchainSource(nsView);
 
         public static SwapchainSource CreateWeb()
             => new WebSwapchainSource();
@@ -109,6 +128,18 @@ namespace Veldrid
         }
     }
 
+    internal class WaylandSwapchainSource : SwapchainSource
+    {
+        public IntPtr Display { get; }
+        public IntPtr Surface { get; }
+
+        public WaylandSwapchainSource(IntPtr display, IntPtr surface)
+        {
+            Display = display;
+            Surface = surface;
+        }
+    }
+
     internal class NSWindowSwapchainSource : SwapchainSource
     {
         public IntPtr NSWindow { get; }
@@ -138,6 +169,16 @@ namespace Veldrid
         {
             Surface = surfaceHandle;
             JniEnv = jniEnv;
+        }
+    }
+
+    internal class NSViewSwapchainSource : SwapchainSource
+    {
+        public IntPtr NSView { get; }
+
+        public NSViewSwapchainSource(IntPtr nsView)
+        {
+            NSView = nsView;
         }
     }
 

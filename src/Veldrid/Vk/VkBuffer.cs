@@ -1,4 +1,5 @@
-﻿using Vulkan;
+﻿using System;
+using Vulkan;
 using static Veldrid.Vk.VulkanUtil;
 using static Vulkan.VulkanNative;
 
@@ -10,8 +11,10 @@ namespace Veldrid.Vk
         private readonly Vulkan.VkBuffer _deviceBuffer;
         private readonly VkMemoryBlock _memory;
         private readonly VkMemoryRequirements _bufferMemoryRequirements;
+        public ResourceRefCount RefCount { get; }
         private bool _destroyed;
         private string _name;
+        public override bool IsDisposed => _destroyed;
 
         public override uint SizeInBytes { get; }
         public override BufferUsage Usage { get; }
@@ -21,7 +24,7 @@ namespace Veldrid.Vk
 
         public VkMemoryRequirements BufferMemoryRequirements => _bufferMemoryRequirements;
 
-        public VkBuffer(VkGraphicsDevice gd, uint sizeInBytes, BufferUsage usage)
+        public VkBuffer(VkGraphicsDevice gd, uint sizeInBytes, BufferUsage usage, string callerMember = null)
         {
             _gd = gd;
             SizeInBytes = sizeInBytes;
@@ -56,15 +59,44 @@ namespace Veldrid.Vk
             VkResult result = vkCreateBuffer(gd.Device, ref bufferCI, null, out _deviceBuffer);
             CheckResult(result);
 
-            vkGetBufferMemoryRequirements(gd.Device, _deviceBuffer, out _bufferMemoryRequirements);
+            bool prefersDedicatedAllocation;
+            if (_gd.GetBufferMemoryRequirements2 != null)
+            {
+                VkBufferMemoryRequirementsInfo2KHR memReqInfo2 = VkBufferMemoryRequirementsInfo2KHR.New();
+                memReqInfo2.buffer = _deviceBuffer;
+                VkMemoryRequirements2KHR memReqs2 = VkMemoryRequirements2KHR.New();
+                VkMemoryDedicatedRequirementsKHR dedicatedReqs = VkMemoryDedicatedRequirementsKHR.New();
+                memReqs2.pNext = &dedicatedReqs;
+                _gd.GetBufferMemoryRequirements2(_gd.Device, &memReqInfo2, &memReqs2);
+                _bufferMemoryRequirements = memReqs2.memoryRequirements;
+                prefersDedicatedAllocation = dedicatedReqs.prefersDedicatedAllocation || dedicatedReqs.requiresDedicatedAllocation;
+            }
+            else
+            {
+                vkGetBufferMemoryRequirements(gd.Device, _deviceBuffer, out _bufferMemoryRequirements);
+                prefersDedicatedAllocation = false;
+            }
 
-            bool hostVisible = (usage & BufferUsage.Dynamic) == BufferUsage.Dynamic
-                || (usage & BufferUsage.Staging) == BufferUsage.Staging;
+            var isStaging = (usage & BufferUsage.Staging) == BufferUsage.Staging;
+            var hostVisible = isStaging || (usage & BufferUsage.Dynamic) == BufferUsage.Dynamic;
 
             VkMemoryPropertyFlags memoryPropertyFlags =
                 hostVisible
                 ? VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent
                 : VkMemoryPropertyFlags.DeviceLocal;
+            if (isStaging)
+            {
+                // Use "host cached" memory for staging when available, for better performance of GPU -> CPU transfers
+                var hostCachedAvailable = TryFindMemoryType(
+                    gd.PhysicalDeviceMemProperties,
+                    _bufferMemoryRequirements.memoryTypeBits,
+                    memoryPropertyFlags | VkMemoryPropertyFlags.HostCached,
+                    out _);
+                if (hostCachedAvailable)
+                {
+                    memoryPropertyFlags |= VkMemoryPropertyFlags.HostCached;
+                }
+            }
 
             VkMemoryBlock memoryToken = gd.MemoryManager.Allocate(
                 gd.PhysicalDeviceMemProperties,
@@ -72,10 +104,15 @@ namespace Veldrid.Vk
                 memoryPropertyFlags,
                 hostVisible,
                 _bufferMemoryRequirements.size,
-                _bufferMemoryRequirements.alignment);
+                _bufferMemoryRequirements.alignment,
+                prefersDedicatedAllocation,
+                VkImage.Null,
+                _deviceBuffer);
             _memory = memoryToken;
             result = vkBindBufferMemory(gd.Device, _deviceBuffer, _memory.DeviceMemory, _memory.Offset);
             CheckResult(result);
+
+            RefCount = new ResourceRefCount(DisposeCore);
         }
 
         public override string Name
@@ -89,6 +126,11 @@ namespace Veldrid.Vk
         }
 
         public override void Dispose()
+        {
+            RefCount.Decrement();
+        }
+
+        private void DisposeCore()
         {
             if (!_destroyed)
             {

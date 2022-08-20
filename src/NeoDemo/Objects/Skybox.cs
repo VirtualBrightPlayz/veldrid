@@ -1,10 +1,8 @@
 ﻿using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.PixelFormats;
-using System;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using Veldrid.Utilities;
+using Veldrid.ImageSharp;
 
 namespace Veldrid.NeoDemo.Objects
 {
@@ -37,7 +35,7 @@ namespace Veldrid.NeoDemo.Objects
             _bottom = bottom;
         }
 
-        public unsafe override void CreateDeviceObjects(GraphicsDevice gd, CommandList cl, SceneContext sc)
+        public override void CreateDeviceObjects(GraphicsDevice gd, CommandList cl, SceneContext sc)
         {
             ResourceFactory factory = gd.ResourceFactory;
 
@@ -47,44 +45,18 @@ namespace Veldrid.NeoDemo.Objects
             _ib = factory.CreateBuffer(new BufferDescription(s_indices.SizeInBytes(), BufferUsage.IndexBuffer));
             cl.UpdateBuffer(_ib, 0, s_indices);
 
-            Texture textureCube;
-            TextureView textureView;
-            fixed (Rgba32* frontPin = &_front.DangerousGetPinnableReferenceToPixelBuffer())
-            fixed (Rgba32* backPin = &_back.DangerousGetPinnableReferenceToPixelBuffer())
-            fixed (Rgba32* leftPin = &_left.DangerousGetPinnableReferenceToPixelBuffer())
-            fixed (Rgba32* rightPin = &_right.DangerousGetPinnableReferenceToPixelBuffer())
-            fixed (Rgba32* topPin = &_top.DangerousGetPinnableReferenceToPixelBuffer())
-            fixed (Rgba32* bottomPin = &_bottom.DangerousGetPinnableReferenceToPixelBuffer())
-            {
-                uint width = (uint)_front.Width;
-                uint height = (uint)_front.Height;
-                textureCube = factory.CreateTexture(TextureDescription.Texture2D(
-                    width,
-                    height,
-                    1,
-                    1,
-                    PixelFormat.R8_G8_B8_A8_UNorm,
-                    TextureUsage.Sampled | TextureUsage.Cubemap));
+            ImageSharpCubemapTexture imageSharpCubemapTexture = new ImageSharpCubemapTexture(_right, _left, _top, _bottom, _back, _front, false);
 
-                uint faceSize = (uint)(_front.Width * _front.Height * Unsafe.SizeOf<Rgba32>());
-                gd.UpdateTexture(textureCube, (IntPtr)rightPin, faceSize, 0, 0, 0, width, height, 1, 0, 0);
-                gd.UpdateTexture(textureCube, (IntPtr)leftPin, faceSize, 0, 0, 0, width, height, 1, 0, 1);
-                gd.UpdateTexture(textureCube, (IntPtr)topPin, faceSize, 0, 0, 0, width, height, 1, 0, 2);
-                gd.UpdateTexture(textureCube, (IntPtr)bottomPin, faceSize, 0, 0, 0, width, height, 1, 0, 3);
-                gd.UpdateTexture(textureCube, (IntPtr)backPin, faceSize, 0, 0, 0, width, height, 1, 0, 4);
-                gd.UpdateTexture(textureCube, (IntPtr)frontPin, faceSize, 0, 0, 0, width, height, 1, 0, 5);
-
-                textureView = factory.CreateTextureView(new TextureViewDescription(textureCube));
-            }
+            Texture textureCube = imageSharpCubemapTexture.CreateDeviceTexture(gd, factory);
+            TextureView textureView = factory.CreateTextureView(new TextureViewDescription(textureCube));
 
             VertexLayoutDescription[] vertexLayouts = new VertexLayoutDescription[]
             {
                 new VertexLayoutDescription(
-                    new VertexElementDescription("Position", VertexElementSemantic.Position, VertexElementFormat.Float3))
+                    new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float3))
             };
 
-            Shader vs = ShaderHelper.LoadShader(gd, factory, "Skybox", ShaderStages.Vertex, "VS");
-            Shader fs = ShaderHelper.LoadShader(gd, factory, "Skybox", ShaderStages.Fragment, "FS");
+            (Shader vs, Shader fs) = StaticResourceCache.GetShaders(gd, gd.ResourceFactory, "Skybox");
 
             _layout = factory.CreateResourceLayout(new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("Projection", ResourceKind.UniformBuffer, ShaderStages.Vertex),
@@ -94,10 +66,10 @@ namespace Veldrid.NeoDemo.Objects
 
             GraphicsPipelineDescription pd = new GraphicsPipelineDescription(
                 BlendStateDescription.SingleAlphaBlend,
-                DepthStencilStateDescription.DepthOnlyLessEqual,
+                gd.IsDepthRangeZeroToOne ? DepthStencilStateDescription.DepthOnlyGreaterEqual : DepthStencilStateDescription.DepthOnlyLessEqual,
                 new RasterizerStateDescription(FaceCullMode.None, PolygonFillMode.Solid, FrontFace.Clockwise, true, true),
                 PrimitiveTopology.TriangleList,
-                new ShaderSetDescription(vertexLayouts, new[] { vs, fs }),
+                new ShaderSetDescription(vertexLayouts, new[] { vs, fs }, ShaderHelper.GetSpecializations(gd)),
                 new ResourceLayout[] { _layout },
                 sc.MainSceneFramebuffer.OutputDescription);
 
@@ -122,12 +94,12 @@ namespace Veldrid.NeoDemo.Objects
         public static Skybox LoadDefaultSkybox()
         {
             return new Skybox(
-                Image.Load(AssetHelper.GetPath("Textures/cloudtop/cloudtop_ft.png")),
-                Image.Load(AssetHelper.GetPath("Textures/cloudtop/cloudtop_bk.png")),
-                Image.Load(AssetHelper.GetPath("Textures/cloudtop/cloudtop_lf.png")),
-                Image.Load(AssetHelper.GetPath("Textures/cloudtop/cloudtop_rt.png")),
-                Image.Load(AssetHelper.GetPath("Textures/cloudtop/cloudtop_up.png")),
-                Image.Load(AssetHelper.GetPath("Textures/cloudtop/cloudtop_dn.png")));
+                Image.Load<Rgba32>(AssetHelper.GetPath("Textures/cloudtop/cloudtop_ft.png")),
+                Image.Load<Rgba32>(AssetHelper.GetPath("Textures/cloudtop/cloudtop_bk.png")),
+                Image.Load<Rgba32>(AssetHelper.GetPath("Textures/cloudtop/cloudtop_lf.png")),
+                Image.Load<Rgba32>(AssetHelper.GetPath("Textures/cloudtop/cloudtop_rt.png")),
+                Image.Load<Rgba32>(AssetHelper.GetPath("Textures/cloudtop/cloudtop_up.png")),
+                Image.Load<Rgba32>(AssetHelper.GetPath("Textures/cloudtop/cloudtop_dn.png")));
         }
 
         public override void DestroyDeviceObjects()
@@ -141,7 +113,11 @@ namespace Veldrid.NeoDemo.Objects
             cl.SetIndexBuffer(_ib, IndexFormat.UInt16);
             cl.SetPipeline(renderPass == RenderPasses.ReflectionMap ? _reflectionPipeline : _pipeline);
             cl.SetGraphicsResourceSet(0, _resourceSet);
+            Texture texture = renderPass == RenderPasses.ReflectionMap ? sc.ReflectionColorTexture : sc.MainSceneColorTexture;
+            float depth = gd.IsDepthRangeZeroToOne ? 0 : 1;
+            cl.SetViewport(0, new Viewport(0, 0, texture.Width, texture.Height, depth, depth));
             cl.DrawIndexed((uint)s_indices.Length, 1, 0, 0, 0);
+            cl.SetViewport(0, new Viewport(0, 0, texture.Width, texture.Height, 0, 1));
         }
 
         public override RenderPasses RenderPasses => RenderPasses.Standard | RenderPasses.ReflectionMap;

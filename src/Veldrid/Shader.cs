@@ -8,9 +8,10 @@ namespace Veldrid
     /// </summary>
     public abstract class Shader : DeviceResource, IDisposable
     {
-        internal Shader(ShaderStages stage)
+        internal Shader(ShaderStages stage, string entryPoint)
         {
             Stage = stage;
+            EntryPoint = entryPoint;
         }
 
         /// <summary>
@@ -28,6 +29,11 @@ namespace Veldrid
         /// tools.
         /// </summary>
         public abstract string Name { get; set; }
+
+        /// <summary>
+        /// A bool indicating whether this instance has been disposed.
+        /// </summary>
+        public abstract bool IsDisposed { get; }
 
         /// <summary>
         /// Frees unmanaged device resources controlled by this instance.

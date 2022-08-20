@@ -15,6 +15,9 @@ namespace Veldrid.Vk
         public VkDescriptorSetLayout DescriptorSetLayout => _dsl;
         public VkDescriptorType[] DescriptorTypes => _descriptorTypes;
         public DescriptorResourceCounts DescriptorResourceCounts { get; }
+        public new int DynamicBufferCount { get; }
+
+        public override bool IsDisposed => _disposed;
 
         public VkResourceLayout(VkGraphicsDevice gd, ref ResourceLayoutDescription description)
             : base(ref description)
@@ -26,18 +29,24 @@ namespace Veldrid.Vk
             VkDescriptorSetLayoutBinding* bindings = stackalloc VkDescriptorSetLayoutBinding[elements.Length];
 
             uint uniformBufferCount = 0;
+            uint uniformBufferDynamicCount = 0;
             uint sampledImageCount = 0;
             uint samplerCount = 0;
             uint storageBufferCount = 0;
+            uint storageBufferDynamicCount = 0;
             uint storageImageCount = 0;
 
             for (uint i = 0; i < elements.Length; i++)
             {
                 bindings[i].binding = i;
                 bindings[i].descriptorCount = 1;
-                VkDescriptorType descriptorType = VkFormats.VdToVkDescriptorType(elements[i].Kind);
+                VkDescriptorType descriptorType = VkFormats.VdToVkDescriptorType(elements[i].Kind, elements[i].Options);
                 bindings[i].descriptorType = descriptorType;
                 bindings[i].stageFlags = VkFormats.VdToVkShaderStages(elements[i].Stages);
+                if ((elements[i].Options & ResourceLayoutElementOptions.DynamicBinding) != 0)
+                {
+                    DynamicBufferCount += 1;
+                }
 
                 _descriptorTypes[i] = descriptorType;
 
@@ -55,17 +64,25 @@ namespace Veldrid.Vk
                     case VkDescriptorType.UniformBuffer:
                         uniformBufferCount += 1;
                         break;
+                    case VkDescriptorType.UniformBufferDynamic:
+                        uniformBufferDynamicCount += 1;
+                        break;
                     case VkDescriptorType.StorageBuffer:
                         storageBufferCount += 1;
+                        break;
+                    case VkDescriptorType.StorageBufferDynamic:
+                        storageBufferDynamicCount += 1;
                         break;
                 }
             }
 
             DescriptorResourceCounts = new DescriptorResourceCounts(
                 uniformBufferCount,
+                uniformBufferDynamicCount,
                 sampledImageCount,
                 samplerCount,
                 storageBufferCount,
+                storageBufferDynamicCount,
                 storageImageCount);
 
             dslCI.bindingCount = (uint)elements.Length;

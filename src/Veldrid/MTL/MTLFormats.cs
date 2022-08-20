@@ -65,8 +65,12 @@ namespace Veldrid.MTL
 
                 case PixelFormat.R8_G8_B8_A8_UNorm:
                     return MTLPixelFormat.RGBA8Unorm;
+                case PixelFormat.R8_G8_B8_A8_UNorm_SRgb:
+                    return MTLPixelFormat.RGBA8Unorm_sRGB;
                 case PixelFormat.B8_G8_R8_A8_UNorm:
                     return MTLPixelFormat.BGRA8Unorm;
+                case PixelFormat.B8_G8_R8_A8_UNorm_SRgb:
+                    return MTLPixelFormat.BGRA8Unorm_sRGB;
                 case PixelFormat.R8_G8_B8_A8_SNorm:
                     return MTLPixelFormat.RGBA8Snorm;
                 case PixelFormat.R8_G8_B8_A8_UInt:
@@ -95,10 +99,29 @@ namespace Veldrid.MTL
                 case PixelFormat.BC1_Rgb_UNorm:
                 case PixelFormat.BC1_Rgba_UNorm:
                     return MTLPixelFormat.BC1_RGBA;
+                case PixelFormat.BC1_Rgb_UNorm_SRgb:
+                case PixelFormat.BC1_Rgba_UNorm_SRgb:
+                    return MTLPixelFormat.BC1_RGBA_sRGB;
                 case PixelFormat.BC2_UNorm:
                     return MTLPixelFormat.BC2_RGBA;
+                case PixelFormat.BC2_UNorm_SRgb:
+                    return MTLPixelFormat.BC2_RGBA_sRGB;
                 case PixelFormat.BC3_UNorm:
                     return MTLPixelFormat.BC3_RGBA;
+                case PixelFormat.BC3_UNorm_SRgb:
+                    return MTLPixelFormat.BC3_RGBA_sRGB;
+                case PixelFormat.BC4_UNorm:
+                    return MTLPixelFormat.BC4_RUnorm;
+                case PixelFormat.BC4_SNorm:
+                    return MTLPixelFormat.BC4_RSnorm;
+                case PixelFormat.BC5_UNorm:
+                    return MTLPixelFormat.BC5_RGUnorm;
+                case PixelFormat.BC5_SNorm:
+                    return MTLPixelFormat.BC5_RGSnorm;
+                case PixelFormat.BC7_UNorm:
+                    return MTLPixelFormat.BC7_RGBAUnorm;
+                case PixelFormat.BC7_UNorm_SRgb:
+                    return MTLPixelFormat.BC7_RGBAUnorm_sRGB;
 
                 case PixelFormat.ETC2_R8_G8_B8_UNorm:
                     return MTLPixelFormat.ETC2_RGB8;
@@ -129,9 +152,19 @@ namespace Veldrid.MTL
             switch (format)
             {
                 case PixelFormat.BC1_Rgb_UNorm:
+                case PixelFormat.BC1_Rgb_UNorm_SRgb:
                 case PixelFormat.BC1_Rgba_UNorm:
+                case PixelFormat.BC1_Rgba_UNorm_SRgb:
                 case PixelFormat.BC2_UNorm:
+                case PixelFormat.BC2_UNorm_SRgb:
                 case PixelFormat.BC3_UNorm:
+                case PixelFormat.BC3_UNorm_SRgb:
+                case PixelFormat.BC4_UNorm:
+                case PixelFormat.BC4_SNorm:
+                case PixelFormat.BC5_UNorm:
+                case PixelFormat.BC5_SNorm:
+                case PixelFormat.BC7_UNorm:
+                case PixelFormat.BC7_UNorm_SRgb:
                     return metalFeatures.IsSupported(MTLFeatureSet.macOS_GPUFamily1_v1)
                         || metalFeatures.IsSupported(MTLFeatureSet.macOS_GPUFamily1_v2)
                         || metalFeatures.IsSupported(MTLFeatureSet.macOS_GPUFamily1_v3);
@@ -311,6 +344,47 @@ namespace Veldrid.MTL
             }
         }
 
+        internal static MTLColorWriteMask VdToMTLColorWriteMask(ColorWriteMask vdMask)
+        {
+            MTLColorWriteMask mask = MTLColorWriteMask.None;
+
+            if ((vdMask & ColorWriteMask.Red) == ColorWriteMask.Red)
+                mask |= MTLColorWriteMask.Red;
+            if ((vdMask & ColorWriteMask.Green) == ColorWriteMask.Green)
+                mask |= MTLColorWriteMask.Green;
+            if ((vdMask & ColorWriteMask.Blue) == ColorWriteMask.Blue)
+                mask |= MTLColorWriteMask.Blue;
+            if ((vdMask & ColorWriteMask.Alpha) == ColorWriteMask.Alpha)
+                mask |= MTLColorWriteMask.Alpha;
+
+            return mask;
+        }
+
+        internal static MTLDataType VdVoMTLShaderConstantType(ShaderConstantType type)
+        {
+            switch (type)
+            {
+                case ShaderConstantType.Bool:
+                    return MTLDataType.Bool;
+                case ShaderConstantType.UInt16:
+                    return MTLDataType.UShort;
+                case ShaderConstantType.Int16:
+                    return MTLDataType.Short;
+                case ShaderConstantType.UInt32:
+                    return MTLDataType.UInt;
+                case ShaderConstantType.Int32:
+                    return MTLDataType.Int;
+                case ShaderConstantType.Float:
+                    return MTLDataType.Float;
+                case ShaderConstantType.UInt64:
+                case ShaderConstantType.Int64:
+                case ShaderConstantType.Double:
+                    throw new VeldridException($"Metal does not support 64-bit shader constants.");
+                default:
+                    throw Illegal.Value<ShaderConstantType>();
+            }
+        }
+
         internal static MTLCompareFunction VdToMTLCompareFunction(ComparisonKind comparisonKind)
         {
             switch (comparisonKind)
@@ -375,7 +449,7 @@ namespace Veldrid.MTL
                 case SamplerAddressMode.Clamp:
                     return MTLSamplerAddressMode.ClampToEdge;
                 case SamplerAddressMode.Mirror:
-                    return MTLSamplerAddressMode.MirrorClampToEdge;
+                    return MTLSamplerAddressMode.MirrorRepeat;
                 case SamplerAddressMode.Wrap:
                     return MTLSamplerAddressMode.Repeat;
                 default:
@@ -483,6 +557,12 @@ namespace Veldrid.MTL
                     return MTLVertexFormat.float3;
                 case VertexElementFormat.Float4:
                     return MTLVertexFormat.float4;
+                case VertexElementFormat.Half1:
+                    return MTLVertexFormat.half;
+                case VertexElementFormat.Half2:
+                    return MTLVertexFormat.half2;
+                case VertexElementFormat.Half4:
+                    return MTLVertexFormat.half4;
                 default:
                     throw Illegal.Value<VertexElementFormat>();
             }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -42,6 +43,7 @@ namespace Veldrid.StartupUtilities
             window = CreateWindow(ref windowCI);
             gd = CreateGraphicsDevice(window, deviceOptions, preferredBackend);
         }
+
 
         public static Sdl2Window CreateWindow(WindowCreateInfo windowCI) => CreateWindow(ref windowCI);
 
@@ -150,6 +152,9 @@ namespace Veldrid.StartupUtilities
                     return SwapchainSource.CreateXlib(
                         x11Info.display,
                         x11Info.Sdl2Window);
+                case SysWMType.Wayland:
+                    WaylandWindowInfo wlInfo = Unsafe.Read<WaylandWindowInfo>(&sysWmInfo.info);
+                    return SwapchainSource.CreateWayland(wlInfo.display, wlInfo.surface);
                 case SysWMType.Cocoa:
                     CocoaWindowInfo cocoaInfo = Unsafe.Read<CocoaWindowInfo>(&sysWmInfo.info);
                     IntPtr nsWindow = cocoaInfo.Window;
@@ -161,14 +166,21 @@ namespace Veldrid.StartupUtilities
 
 #if !EXCLUDE_METAL_BACKEND
         private static unsafe GraphicsDevice CreateMetalGraphicsDevice(GraphicsDeviceOptions options, Sdl2Window window)
+            => CreateMetalGraphicsDevice(options, window, options.SwapchainSrgbFormat);
+        private static unsafe GraphicsDevice CreateMetalGraphicsDevice(
+            GraphicsDeviceOptions options,
+            Sdl2Window window,
+            bool colorSrgb)
         {
-            IntPtr sdlHandle = window.SdlWindowHandle;
-            SDL_SysWMinfo sysWmInfo;
-            Sdl2Native.SDL_GetVersion(&sysWmInfo.version);
-            Sdl2Native.SDL_GetWMWindowInfo(sdlHandle, &sysWmInfo);
-            ref CocoaWindowInfo cocoaInfo = ref Unsafe.AsRef<CocoaWindowInfo>(&sysWmInfo.info);
-            IntPtr nsWindow = cocoaInfo.Window;
-            return GraphicsDevice.CreateMetal(options, nsWindow);
+            SwapchainSource source = GetSwapchainSource(window);
+            SwapchainDescription swapchainDesc = new SwapchainDescription(
+                source,
+                (uint)window.Width, (uint)window.Height,
+                options.SwapchainDepthFormat,
+                options.SyncToVerticalBlank,
+                colorSrgb);
+
+            return GraphicsDevice.CreateMetal(options, swapchainDesc);
         }
 #endif
 
@@ -180,7 +192,9 @@ namespace Veldrid.StartupUtilities
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                return GraphicsBackend.Metal;
+                return GraphicsDevice.IsBackendSupported(GraphicsBackend.Metal)
+                    ? GraphicsBackend.Metal
+                    : GraphicsBackend.OpenGL;
             }
             else
             {
@@ -192,13 +206,19 @@ namespace Veldrid.StartupUtilities
 
 #if !EXCLUDE_VULKAN_BACKEND
         public static unsafe GraphicsDevice CreateVulkanGraphicsDevice(GraphicsDeviceOptions options, Sdl2Window window)
+            => CreateVulkanGraphicsDevice(options, window, false);
+        public static unsafe GraphicsDevice CreateVulkanGraphicsDevice(
+            GraphicsDeviceOptions options,
+            Sdl2Window window,
+            bool colorSrgb)
         {
             SwapchainDescription scDesc = new SwapchainDescription(
                 GetSwapchainSource(window),
                 (uint)window.Width,
                 (uint)window.Height,
                 options.SwapchainDepthFormat,
-                options.SyncToVerticalBlank);
+                options.SyncToVerticalBlank,
+                colorSrgb);
             GraphicsDevice gd = GraphicsDevice.CreateVulkan(options, scDesc);
 
             return gd;
@@ -223,8 +243,12 @@ namespace Veldrid.StartupUtilities
 #endif
 
 #if !EXCLUDE_OPENGL_BACKEND
-        public static unsafe GraphicsDevice CreateDefaultOpenGLGraphicsDevice(GraphicsDeviceOptions options, Sdl2Window window, GraphicsBackend backend)
+        public static unsafe GraphicsDevice CreateDefaultOpenGLGraphicsDevice(
+            GraphicsDeviceOptions options,
+            Sdl2Window window,
+            GraphicsBackend backend)
         {
+            Sdl2Native.SDL_ClearError();
             IntPtr sdlHandle = window.SdlWindowHandle;
 
             SDL_SysWMinfo sysWmInfo;
@@ -269,24 +293,33 @@ namespace Veldrid.StartupUtilities
                 (uint)window.Height);
         }
 
-        private static unsafe void SetSDLGLContextAttributes(GraphicsDeviceOptions options, GraphicsBackend backend)
+        public static unsafe void SetSDLGLContextAttributes(GraphicsDeviceOptions options, GraphicsBackend backend)
         {
-            if (options.Debug)
+            if (backend != GraphicsBackend.OpenGL && backend != GraphicsBackend.OpenGLES)
             {
-                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextFlags, (int)SDL_GLContextFlag.Debug);
+                throw new VeldridException(
+                    $"{nameof(backend)} must be {nameof(GraphicsBackend.OpenGL)} or {nameof(GraphicsBackend.OpenGLES)}.");
             }
+
+            SDL_GLContextFlag contextFlags = options.Debug
+                ? SDL_GLContextFlag.Debug | SDL_GLContextFlag.ForwardCompatible
+                : SDL_GLContextFlag.ForwardCompatible;
+
+            Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextFlags, (int)contextFlags);
+
+            (int major, int minor) = GetMaxGLVersion(backend == GraphicsBackend.OpenGLES);
 
             if (backend == GraphicsBackend.OpenGL)
             {
                 Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextProfileMask, (int)SDL_GLProfile.Core);
-                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMajorVersion, 3);
-                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMinorVersion, 0);
+                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMajorVersion, major);
+                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMinorVersion, minor);
             }
             else
             {
                 Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextProfileMask, (int)SDL_GLProfile.ES);
-                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMajorVersion, 3);
-                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMinorVersion, 1);
+                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMajorVersion, major);
+                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMinorVersion, minor);
             }
 
             int depthBits = 0;
@@ -316,13 +349,32 @@ namespace Veldrid.StartupUtilities
 
             int result = Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.DepthSize, depthBits);
             result = Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.StencilSize, stencilBits);
+
+            if (options.SwapchainSrgbFormat)
+            {
+                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.FramebufferSrgbCapable, 1);
+            }
+            else
+            {
+                Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.FramebufferSrgbCapable, 0);
+            }
         }
 #endif
 
 #if !EXCLUDE_D3D11_BACKEND
-        public static GraphicsDevice CreateDefaultD3D11GraphicsDevice(GraphicsDeviceOptions options, Sdl2Window window)
+        public static GraphicsDevice CreateDefaultD3D11GraphicsDevice(
+            GraphicsDeviceOptions options,
+            Sdl2Window window)
         {
-            return GraphicsDevice.CreateD3D11(options, window.Handle, (uint)window.Width, (uint)window.Height);
+            SwapchainSource source = GetSwapchainSource(window);
+            SwapchainDescription swapchainDesc = new SwapchainDescription(
+                source,
+                (uint)window.Width, (uint)window.Height,
+                options.SwapchainDepthFormat,
+                options.SyncToVerticalBlank,
+                options.SwapchainSrgbFormat);
+
+            return GraphicsDevice.CreateD3D11(options, swapchainDesc);
         }
 #endif
 
@@ -336,5 +388,83 @@ namespace Veldrid.StartupUtilities
 
             return Encoding.UTF8.GetString(stringStart, characters);
         }
+
+#if !EXCLUDE_OPENGL_BACKEND
+        private static readonly object s_glVersionLock = new object();
+        private static (int Major, int Minor)? s_maxSupportedGLVersion;
+        private static (int Major, int Minor)? s_maxSupportedGLESVersion;
+
+        private static (int Major, int Minor) GetMaxGLVersion(bool gles)
+        {
+            lock (s_glVersionLock)
+            {
+                (int Major, int Minor)? maxVer = gles ? s_maxSupportedGLESVersion : s_maxSupportedGLVersion;
+                if (maxVer == null)
+                {
+                    maxVer = TestMaxVersion(gles);
+                    if (gles) { s_maxSupportedGLESVersion = maxVer; }
+                    else { s_maxSupportedGLVersion = maxVer; }
+                }
+
+                return maxVer.Value;
+            }
+        }
+
+        private static (int Major, int Minor) TestMaxVersion(bool gles)
+        {
+            (int, int)[] testVersions = gles
+                ? new[] { (3, 2), (3, 0) }
+                : new[] { (4, 6), (4, 3), (4, 0), (3, 3), (3, 0) };
+
+            foreach ((int major, int minor) in testVersions)
+            {
+                if (TestIndividualGLVersion(gles, major, minor)) { return (major, minor); }
+            }
+
+            return (0, 0);
+        }
+
+        private static unsafe bool TestIndividualGLVersion(bool gles, int major, int minor)
+        {
+            SDL_GLProfile profileMask = gles ? SDL_GLProfile.ES : SDL_GLProfile.Core;
+
+            Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextProfileMask, (int)profileMask);
+            Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMajorVersion, major);
+            Sdl2Native.SDL_GL_SetAttribute(SDL_GLAttribute.ContextMinorVersion, minor);
+
+            SDL_Window window = Sdl2Native.SDL_CreateWindow(
+                string.Empty,
+                0, 0,
+                1, 1,
+                SDL_WindowFlags.Hidden | SDL_WindowFlags.OpenGL);
+            byte* error = Sdl2Native.SDL_GetError();
+            string errorString = GetString(error);
+
+            if (window.NativePointer == IntPtr.Zero || !string.IsNullOrEmpty(errorString))
+            {
+                Sdl2Native.SDL_ClearError();
+                Debug.WriteLine($"Unable to create version {major}.{minor} {profileMask} context.");
+                return false;
+            }
+
+            IntPtr context = Sdl2Native.SDL_GL_CreateContext(window);
+            error = Sdl2Native.SDL_GetError();
+            if (error != null)
+            {
+                errorString = GetString(error);
+                if (!string.IsNullOrEmpty(errorString))
+                {
+                    Sdl2Native.SDL_ClearError();
+                    Debug.WriteLine($"Unable to create version {major}.{minor} {profileMask} context.");
+                    Sdl2Native.SDL_DestroyWindow(window);
+                    return false;
+                }
+            }
+
+            Sdl2Native.SDL_GL_DeleteContext(context);
+            Sdl2Native.SDL_DestroyWindow(window);
+            return true;
+        }
+#endif
     }
 }

@@ -67,20 +67,20 @@ namespace Veldrid.OpenGL
 
         public void ResolveTexture(Texture source, Texture destination) => _executor.ResolveTexture(source, destination);
 
-        public void SetComputeResourceSet(uint slot, ResourceSet rs) => _executor.SetComputeResourceSet(slot, rs);
+        public void SetComputeResourceSet(uint slot, ResourceSet rs, uint dynamicOffsetCount, ref uint dynamicOffsets) => _executor.SetComputeResourceSet(slot, rs, dynamicOffsetCount, ref dynamicOffsets);
 
         public void SetFramebuffer(Framebuffer fb) => _executor.SetFramebuffer(fb);
 
-        public void SetGraphicsResourceSet(uint slot, ResourceSet rs) => _executor.SetGraphicsResourceSet(slot, rs);
+        public void SetGraphicsResourceSet(uint slot, ResourceSet rs, uint dynamicOffsetCount, ref uint dynamicOffsets) => _executor.SetGraphicsResourceSet(slot, rs, dynamicOffsetCount, ref dynamicOffsets);
 
-        public void SetIndexBuffer(DeviceBuffer buffer, IndexFormat format) => _executor.SetIndexBuffer(buffer, format);
+        public void SetIndexBuffer(DeviceBuffer buffer, IndexFormat format, uint offset) => _executor.SetIndexBuffer(buffer, format, offset);
 
         public void SetPipeline(Pipeline pipeline) => _executor.SetPipeline(pipeline);
 
         public void SetScissorRect(uint index, uint x, uint y, uint width, uint height)
             => _executor.SetScissorRect(index, x, y, width, height);
 
-        public void SetVertexBuffer(uint index, DeviceBuffer buffer) => _executor.SetVertexBuffer(index, buffer);
+        public void SetVertexBuffer(uint index, DeviceBuffer buffer, uint offset) => _executor.SetVertexBuffer(index, buffer, offset);
 
         public void SetViewport(uint index, ref Viewport viewport) => _executor.SetViewport(index, ref viewport);
 
@@ -88,5 +88,11 @@ namespace Veldrid.OpenGL
             => _executor.UpdateBuffer(buffer, bufferOffsetInBytes, source, sizeInBytes);
 
         public void GenerateMipmaps(Texture texture) => _executor.GenerateMipmaps(texture);
+
+        public void PushDebugGroup(string name) { }
+
+        public void PopDebugGroup() { }
+
+        public void InsertDebugMarker(string name) { }
     }
 }

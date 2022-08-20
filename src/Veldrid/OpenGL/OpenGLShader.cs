@@ -12,17 +12,19 @@ namespace Veldrid.OpenGL
         private readonly ShaderType _shaderType;
         private readonly StagingBlock _stagingBlock;
 
+        private bool _disposeRequested;
         private bool _disposed;
         private string _name;
         private bool _nameChanged;
         public override string Name { get => _name; set { _name = value; _nameChanged = true; } }
+        public override bool IsDisposed => _disposeRequested;
 
         private uint _shader;
 
         public uint Shader => _shader;
 
-        public OpenGLShader(OpenGLGraphicsDevice gd, ShaderStages stage, StagingBlock stagingBlock)
-            : base(stage)
+        public OpenGLShader(OpenGLGraphicsDevice gd, ShaderStages stage, StagingBlock stagingBlock, string entryPoint)
+            : base(stage, entryPoint)
         {
 #if VALIDATE_USAGE
             if (stage == ShaderStages.Compute && !gd.Extensions.ComputeShaders)
@@ -40,11 +42,6 @@ namespace Veldrid.OpenGL
             _gd = gd;
             _shaderType = OpenGLFormats.VdToGLShaderType(stage);
             _stagingBlock = stagingBlock;
-
-            if (!gd.MultiThreaded)
-            {
-                EnsureResourcesCreated();
-            }
         }
 
         public bool Created { get; private set; }
@@ -70,14 +67,11 @@ namespace Veldrid.OpenGL
             _shader = glCreateShader(_shaderType);
             CheckLastError();
 
-            fixed (byte* arrayPtr = &_stagingBlock.Array[0])
-            {
-                byte* textPtr = arrayPtr;
-                int length = (int)_stagingBlock.SizeInBytes;
-                byte** textsPtr = &textPtr;
+            byte* textPtr = (byte*)_stagingBlock.Data;
+            int length = (int)_stagingBlock.SizeInBytes;
+            byte** textsPtr = &textPtr;
 
-                glShaderSource(_shader, 1, textsPtr, &length);
-            }
+            glShaderSource(_shader, 1, textsPtr, &length);
             CheckLastError();
 
             glCompileShader(_shader);
@@ -105,13 +99,17 @@ namespace Veldrid.OpenGL
                 throw new VeldridException($"Unable to compile shader code for shader [{_name}] of type {_shaderType}: {message}");
             }
 
-            _stagingBlock.Free();
+            _gd.StagingMemoryPool.Free(_stagingBlock);
             Created = true;
         }
 
         public override void Dispose()
         {
-            _gd.EnqueueDisposal(this);
+            if (!_disposeRequested)
+            {
+                _disposeRequested = true;
+                _gd.EnqueueDisposal(this);
+            }
         }
 
         public void DestroyGLResources()
@@ -119,8 +117,15 @@ namespace Veldrid.OpenGL
             if (!_disposed)
             {
                 _disposed = true;
-                glDeleteShader(_shader);
-                CheckLastError();
+                if (Created)
+                {
+                    glDeleteShader(_shader);
+                    CheckLastError();
+                }
+                else
+                {
+                    _gd.StagingMemoryPool.Free(_stagingBlock);
+                }
             }
         }
     }

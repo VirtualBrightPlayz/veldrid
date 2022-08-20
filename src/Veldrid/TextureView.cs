@@ -28,6 +28,11 @@ namespace Veldrid
         /// The number of array layers visible in the view.
         /// </summary>
         public uint ArrayLayers { get; }
+        /// <summary>
+        /// The format used to interpret the contents of the target Texture. This may be different from the target Texture's
+        /// true storage format, but it will be the same size.
+        /// </summary>
+        public PixelFormat Format { get; }
 
         internal TextureView(ref TextureViewDescription description)
         {
@@ -36,6 +41,7 @@ namespace Veldrid
             MipLevels = description.MipLevels;
             BaseArrayLayer = description.BaseArrayLayer;
             ArrayLayers = description.ArrayLayers;
+            Format = description.Format ?? description.Target.Format;
         }
 
         /// <summary>
@@ -43,6 +49,11 @@ namespace Veldrid
         /// tools.
         /// </summary>
         public abstract string Name { get; set; }
+
+        /// <summary>
+        /// A bool indicating whether this instance has been disposed.
+        /// </summary>
+        public abstract bool IsDisposed { get; }
 
         /// <summary>
         /// Frees unmanaged device resources controlled by this instance.

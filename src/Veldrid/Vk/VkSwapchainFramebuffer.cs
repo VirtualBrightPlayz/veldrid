@@ -10,6 +10,7 @@ namespace Veldrid.Vk
     internal unsafe class VkSwapchainFramebuffer : VkFramebufferBase
     {
         private readonly VkGraphicsDevice _gd;
+        private readonly VkSwapchain _swapchain;
         private readonly VkSurfaceKHR _surface;
         private readonly PixelFormat? _depthFormat;
         private uint _currentImageIndex;
@@ -49,8 +50,13 @@ namespace Veldrid.Vk
 
         public override uint AttachmentCount { get; }
 
+        public VkSwapchain Swapchain => _swapchain;
+
+        public override bool IsDisposed => _destroyed;
+
         public VkSwapchainFramebuffer(
             VkGraphicsDevice gd,
+            VkSwapchain swapchain,
             VkSurfaceKHR surface,
             uint width,
             uint height,
@@ -58,6 +64,7 @@ namespace Veldrid.Vk
             : base()
         {
             _gd = gd;
+            _swapchain = swapchain;
             _surface = surface;
             _depthFormat = depthFormat;
 
@@ -97,6 +104,19 @@ namespace Veldrid.Vk
             CreateFramebuffers();
 
             _outputDescription = OutputDescription.CreateFromFramebuffer(this);
+        }
+
+        private void DestroySwapchainFramebuffers()
+        {
+            if (_scFramebuffers != null)
+            {
+                for (int i = 0; i < _scFramebuffers.Length; i++)
+                {
+                    _scFramebuffers[i]?.Dispose();
+                    _scFramebuffers[i] = null;
+                }
+                Array.Clear(_scFramebuffers, 0, _scFramebuffers.Length);
+            }
         }
 
         private void CreateDepthTexture()
@@ -150,8 +170,9 @@ namespace Veldrid.Vk
 
         public override void TransitionToIntermediateLayout(VkCommandBuffer cb)
         {
-            foreach (FramebufferAttachment ca in ColorTargets)
+            for (int i = 0; i < ColorTargets.Count; i++)
             {
+                FramebufferAttachment ca = ColorTargets[i];
                 VkTexture vkTex = Util.AssertSubtype<Texture, VkTexture>(ca.Target);
                 vkTex.SetImageLayout(0, ca.ArrayLayer, VkImageLayout.ColorAttachmentOptimal);
             }
@@ -159,8 +180,9 @@ namespace Veldrid.Vk
 
         public override void TransitionToFinalLayout(VkCommandBuffer cb)
         {
-            foreach (FramebufferAttachment ca in ColorTargets)
+            for (int i = 0; i < ColorTargets.Count; i++)
             {
+                FramebufferAttachment ca = ColorTargets[i];
                 VkTexture vkTex = Util.AssertSubtype<Texture, VkTexture>(ca.Target);
                 vkTex.TransitionImageLayout(cb, 0, 1, ca.ArrayLayer, 1, VkImageLayout.PresentSrcKHR);
             }
@@ -176,16 +198,13 @@ namespace Veldrid.Vk
             }
         }
 
-        public override void Dispose()
+        protected override void DisposeCore()
         {
             if (!_destroyed)
             {
                 _destroyed = true;
                 _depthAttachment?.Target.Dispose();
-                for (int i = 0; i < _scFramebuffers.Length; i++)
-                {
-                    _scFramebuffers[i]?.Dispose();
-                }
+                DestroySwapchainFramebuffers();
             }
         }
     }

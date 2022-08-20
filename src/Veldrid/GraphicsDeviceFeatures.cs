@@ -70,6 +70,31 @@
         /// blend state.
         /// </summary>
         public bool IndependentBlend { get; }
+        /// <summary>
+        /// Indicates whether <see cref="BufferUsage.StructuredBufferReadOnly"/> and
+        /// <see cref="BufferUsage.StructuredBufferReadWrite"/> can be used. If false, structured buffers cannot be created.
+        /// </summary>
+        public bool StructuredBuffer { get; }
+        /// <summary>
+        /// Indicates whether a <see cref="TextureView"/> can be created which does not view the full set of mip levels and array
+        /// layers contained in its target Texture, or uses a different <see cref="PixelFormat"/> from the underlying Texture.
+        /// </summary>
+        public bool SubsetTextureView { get; }
+        /// <summary>
+        /// Indicates whether <see cref="CommandList"/> instances created with this device support the
+        /// <see cref="CommandList.PushDebugGroup(string)"/>, <see cref="CommandList.PopDebugGroup"/>, and
+        /// <see cref="CommandList.InsertDebugMarker(string)"/> methods. If not, these methods will have no effect.
+        /// </summary>
+        public bool CommandListDebugMarkers { get; }
+        /// <summary>
+        /// Indicates whether uniform and structured buffers can be bound with an offset and a size. If false, buffer resources
+        /// must be bound with their full range.
+        /// </summary>
+        public bool BufferRangeBinding { get; }
+        /// <summary>
+        /// Indicates whether 64-bit floating point integers can be used in shaders.
+        /// </summary>
+        public bool ShaderFloat64 { get; }
 
         internal GraphicsDeviceFeatures(
             bool computeShader,
@@ -85,7 +110,12 @@
             bool samplerAnisotropy,
             bool depthClipDisable,
             bool texture1D,
-            bool independentBlend)
+            bool independentBlend,
+            bool structuredBuffer,
+            bool subsetTextureView,
+            bool commandListDebugMarkers,
+            bool bufferRangeBinding,
+            bool shaderFloat64)
         {
             ComputeShader = computeShader;
             GeometryShader = geometryShader;
@@ -101,6 +131,11 @@
             DepthClipDisable = depthClipDisable;
             Texture1D = texture1D;
             IndependentBlend = independentBlend;
+            StructuredBuffer = structuredBuffer;
+            SubsetTextureView = subsetTextureView;
+            CommandListDebugMarkers = commandListDebugMarkers;
+            BufferRangeBinding = bufferRangeBinding;
+            ShaderFloat64 = shaderFloat64;
         }
     }
 }

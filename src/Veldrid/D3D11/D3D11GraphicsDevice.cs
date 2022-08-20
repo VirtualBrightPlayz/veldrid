@@ -1,71 +1,173 @@
-﻿using SharpDX;
-using SharpDX.Direct3D11;
-using SharpDX.DXGI;
+﻿using Vortice;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Vortice.Mathematics;
+using Vortice.Direct3D11.Debug;
+using VorticeDXGI = Vortice.DXGI.DXGI;
+using VorticeD3D11 = Vortice.Direct3D11.D3D11;
+using Vortice.DXGI.Debug;
 
 namespace Veldrid.D3D11
 {
     internal class D3D11GraphicsDevice : GraphicsDevice
     {
-        private readonly SharpDX.Direct3D11.Device _device;
-        private readonly DeviceContext _immediateContext;
+        private readonly IDXGIAdapter _dxgiAdapter;
+        private readonly ID3D11Device _device;
+        private readonly string _deviceName;
+        private readonly string _vendorName;
+        private readonly GraphicsApiVersion _apiVersion;
+        private readonly int _deviceId;
+        private readonly ID3D11DeviceContext _immediateContext;
         private readonly D3D11ResourceFactory _d3d11ResourceFactory;
         private readonly D3D11Swapchain _mainSwapchain;
         private readonly bool _supportsConcurrentResources;
         private readonly bool _supportsCommandLists;
-        private readonly ConditionalLock _immediateContextLock = new ConditionalLock();
-        private readonly bool _multiThreaded;
+        private readonly object _immediateContextLock = new object();
+        private readonly BackendInfoD3D11 _d3d11Info;
 
-        private readonly ConditionalLock _mappedResourceLock = new ConditionalLock();
+        private readonly object _mappedResourceLock = new object();
         private readonly Dictionary<MappedResourceCacheKey, MappedResourceInfo> _mappedResources
             = new Dictionary<MappedResourceCacheKey, MappedResourceInfo>();
 
-        private readonly ConditionalLock _stagingResourcesLock = new ConditionalLock();
+        private readonly object _stagingResourcesLock = new object();
         private readonly List<D3D11Buffer> _availableStagingBuffers = new List<D3D11Buffer>();
-
-        private readonly ConditionalLock _resetEventsLock = new ConditionalLock();
-        private readonly List<ManualResetEvent[]> _resetEvents = new List<ManualResetEvent[]>();
-        private readonly D3D11CommandList _immediateCL;
 
         public override GraphicsBackend BackendType => GraphicsBackend.Direct3D11;
 
         public override bool IsUvOriginTopLeft => true;
 
+        public override bool IsDepthRangeZeroToOne => true;
+
+        public override bool IsClipSpaceYInverted => false;
+
         public override ResourceFactory ResourceFactory => _d3d11ResourceFactory;
 
-        public SharpDX.Direct3D11.Device Device => _device;
+        public ID3D11Device Device => _device;
+
+        public IDXGIAdapter Adapter => _dxgiAdapter;
+
+        public bool IsDebugEnabled { get; }
 
         public bool SupportsConcurrentResources => _supportsConcurrentResources;
 
         public bool SupportsCommandLists => _supportsCommandLists;
 
+        public int DeviceId => _deviceId;
+
         public override Swapchain MainSwapchain => _mainSwapchain;
 
         public override GraphicsDeviceFeatures Features { get; }
 
-        protected override CommandList GetImmediateCommandListCore() => _immediateCL;
-
-        public D3D11GraphicsDevice(GraphicsDeviceOptions options, SwapchainDescription? swapchainDesc)
-            : base(options)
+        public D3D11GraphicsDevice(GraphicsDeviceOptions options, D3D11DeviceOptions d3D11DeviceOptions, SwapchainDescription? swapchainDesc)
+            : this(MergeOptions(d3D11DeviceOptions, options), swapchainDesc)
         {
-            _multiThreaded = !options.SingleThreaded;
+        }
+
+        public D3D11GraphicsDevice(D3D11DeviceOptions options, SwapchainDescription? swapchainDesc)
+        {
+            var flags = (DeviceCreationFlags)options.DeviceCreationFlags;
 #if DEBUG
-            DeviceCreationFlags creationFlags = DeviceCreationFlags.Debug;
-#else
-            DeviceCreationFlags creationFlags = options.Debug ? DeviceCreationFlags.Debug : DeviceCreationFlags.None;
-#endif 
-            _device = new SharpDX.Direct3D11.Device(SharpDX.Direct3D.DriverType.Hardware, creationFlags);
+            flags |= DeviceCreationFlags.Debug;
+#endif
+            // If debug flag set but SDK layers aren't available we can't enable debug.
+            if (0 != (flags & DeviceCreationFlags.Debug) && !Vortice.Direct3D11.D3D11.SdkLayersAvailable())
+            {
+                flags &= ~DeviceCreationFlags.Debug;
+            }
+
+            try
+            {
+                if (options.AdapterPtr != IntPtr.Zero)
+                {
+                    VorticeD3D11.D3D11CreateDevice(options.AdapterPtr,
+                        Vortice.Direct3D.DriverType.Hardware,
+                        flags,
+                        new[]
+                        {
+                            Vortice.Direct3D.FeatureLevel.Level_11_1,
+                            Vortice.Direct3D.FeatureLevel.Level_11_0,
+                        },
+                        out _device).CheckError();
+                }
+                else
+                {
+                    VorticeD3D11.D3D11CreateDevice(IntPtr.Zero,
+                        Vortice.Direct3D.DriverType.Hardware,
+                        flags,
+                        new[]
+                        {
+                            Vortice.Direct3D.FeatureLevel.Level_11_1,
+                            Vortice.Direct3D.FeatureLevel.Level_11_0,
+                        },
+                        out _device).CheckError();
+                }
+            }
+            catch
+            {
+                VorticeD3D11.D3D11CreateDevice(IntPtr.Zero,
+                    Vortice.Direct3D.DriverType.Hardware,
+                    flags,
+                    null,
+                    out _device).CheckError();
+            }
+
+            using (IDXGIDevice dxgiDevice = _device.QueryInterface<IDXGIDevice>())
+            {
+                // Store a pointer to the DXGI adapter.
+                // This is for the case of no preferred DXGI adapter, or fallback to WARP.
+                dxgiDevice.GetAdapter(out _dxgiAdapter).CheckError();
+
+                AdapterDescription desc = _dxgiAdapter.Description;
+                _deviceName = desc.Description;
+                _vendorName = "id:" + ((uint)desc.VendorId).ToString("x8");
+                _deviceId = desc.DeviceId;
+            }
+
+            switch (_device.FeatureLevel)
+            {
+                case Vortice.Direct3D.FeatureLevel.Level_10_0:
+                    _apiVersion = new GraphicsApiVersion(10, 0, 0, 0);
+                    break;
+
+                case Vortice.Direct3D.FeatureLevel.Level_10_1:
+                    _apiVersion = new GraphicsApiVersion(10, 1, 0, 0);
+                    break;
+
+                case Vortice.Direct3D.FeatureLevel.Level_11_0:
+                    _apiVersion = new GraphicsApiVersion(11, 0, 0, 0);
+                    break;
+
+                case Vortice.Direct3D.FeatureLevel.Level_11_1:
+                    _apiVersion = new GraphicsApiVersion(11, 1, 0, 0);
+                    break;
+
+                case Vortice.Direct3D.FeatureLevel.Level_12_0:
+                    _apiVersion = new GraphicsApiVersion(12, 0, 0, 0);
+                    break;
+
+                case Vortice.Direct3D.FeatureLevel.Level_12_1:
+                    _apiVersion = new GraphicsApiVersion(12, 1, 0, 0);
+                    break;
+
+                case Vortice.Direct3D.FeatureLevel.Level_12_2:
+                    _apiVersion = new GraphicsApiVersion(12, 2, 0, 0);
+                    break;
+            }
+
             if (swapchainDesc != null)
             {
                 SwapchainDescription desc = swapchainDesc.Value;
-                _mainSwapchain = new D3D11Swapchain(_device, ref desc);
+                _mainSwapchain = new D3D11Swapchain(this, ref desc);
             }
             _immediateContext = _device.ImmediateContext;
             _device.CheckThreadingSupport(out _supportsConcurrentResources, out _supportsCommandLists);
+
+            IsDebugEnabled = (flags & DeviceCreationFlags.Debug) != 0;
 
             Features = new GraphicsDeviceFeatures(
                 computeShader: true,
@@ -81,35 +183,41 @@ namespace Veldrid.D3D11
                 samplerAnisotropy: true,
                 depthClipDisable: true,
                 texture1D: true,
-                independentBlend: true);
+                independentBlend: true,
+                structuredBuffer: true,
+                subsetTextureView: true,
+                commandListDebugMarkers: _device.FeatureLevel >= Vortice.Direct3D.FeatureLevel.Level_11_1,
+                bufferRangeBinding: _device.FeatureLevel >= Vortice.Direct3D.FeatureLevel.Level_11_1,
+                shaderFloat64: _device.CheckFeatureSupport<FeatureDataDoubles>(Vortice.Direct3D11.Feature.Doubles).DoublePrecisionFloatShaderOps);
 
             _d3d11ResourceFactory = new D3D11ResourceFactory(this);
-
-            if (!_multiThreaded)
-            {
-                CommandListDescription clDesc;
-                _immediateCL = new D3D11CommandList(this, ref clDesc, _immediateContext);
-            }
+            _d3d11Info = new BackendInfoD3D11(this);
 
             PostDeviceCreated();
         }
 
-        protected override void SubmitCommandsCore(CommandList cl, Fence fence)
+        private static D3D11DeviceOptions MergeOptions(D3D11DeviceOptions d3D11DeviceOptions, GraphicsDeviceOptions options)
+        {
+            if (options.Debug)
+            {
+                d3D11DeviceOptions.DeviceCreationFlags |= (uint)DeviceCreationFlags.Debug;
+            }
+
+            return d3D11DeviceOptions;
+        }
+
+        protected override CommandList GetImmediateCommandListCore() => throw new NotImplementedException();
+
+        private protected override void SubmitCommandsCore(CommandList cl, Fence fence)
         {
             D3D11CommandList d3d11CL = Util.AssertSubtype<CommandList, D3D11CommandList>(cl);
-
-            if (!d3d11CL.IsImmediate)
+            lock (_immediateContextLock)
             {
-                using (_immediateContextLock.Lock(_multiThreaded))
+                if (d3d11CL.DeviceCommandList != null) // CommandList may have been reset in the meantime (resized swapchain).
                 {
-                    if (d3d11CL.DeviceCommandList != null) // CommandList may have been reset in the meantime (resized swapchain).
-                    {
-                        _immediateContext.ExecuteCommandList(d3d11CL.DeviceCommandList, false);
-                        d3d11CL.OnCompleted();
-                    }
+                    _immediateContext.ExecuteCommandList(d3d11CL.DeviceCommandList, false);
+                    d3d11CL.OnCompleted();
                 }
-
-                _immediateCL.Reset();
             }
 
             if (fence is D3D11Fence d3d11Fence)
@@ -118,9 +226,9 @@ namespace Veldrid.D3D11
             }
         }
 
-        protected override void SwapBuffersCore(Swapchain swapchain)
+        private protected override void SwapBuffersCore(Swapchain swapchain)
         {
-            using (_immediateContextLock.Lock(_multiThreaded))
+            lock (_immediateContextLock)
             {
                 D3D11Swapchain d3d11SC = Util.AssertSubtype<Swapchain, D3D11Swapchain>(swapchain);
                 d3d11SC.DxgiSwapChain.Present(d3d11SC.SyncInterval, PresentFlags.None);
@@ -159,7 +267,7 @@ namespace Veldrid.D3D11
             return _device.CheckMultisampleQualityLevels(format, sampleCount) != 0;
         }
 
-        protected override bool GetPixelFormatSupportCore(
+        private protected override bool GetPixelFormatSupportCore(
             PixelFormat format,
             TextureType type,
             TextureUsage usage,
@@ -208,7 +316,7 @@ namespace Veldrid.D3D11
         protected override MappedResource MapCore(MappableResource resource, MapMode mode, uint subresource)
         {
             MappedResourceCacheKey key = new MappedResourceCacheKey(resource, subresource);
-            using (_mappedResourceLock.Lock(_multiThreaded))
+            lock (_mappedResourceLock)
             {
                 if (_mappedResources.TryGetValue(key, out MappedResourceInfo info))
                 {
@@ -226,15 +334,15 @@ namespace Veldrid.D3D11
 
                     if (resource is D3D11Buffer buffer)
                     {
-                        using (_immediateContextLock.Lock(_multiThreaded))
+                        lock (_immediateContextLock)
                         {
-                            DataBox db = _immediateContext.MapSubresource(
+                            MappedSubresource msr = _immediateContext.Map(
                                 buffer.Buffer,
                                 0,
                                 D3D11Formats.VdToD3D11MapMode((buffer.Usage & BufferUsage.Dynamic) == BufferUsage.Dynamic, mode),
-                                SharpDX.Direct3D11.MapFlags.None);
+                                Vortice.Direct3D11.MapFlags.None);
 
-                            info.MappedResource = new MappedResource(resource, mode, db.DataPointer, buffer.SizeInBytes);
+                            info.MappedResource = new MappedResource(resource, mode, msr.DataPointer, buffer.SizeInBytes);
                             info.RefCount = 1;
                             info.Mode = mode;
                             _mappedResources.Add(key, info);
@@ -243,23 +351,25 @@ namespace Veldrid.D3D11
                     else
                     {
                         D3D11Texture texture = Util.AssertSubtype<MappableResource, D3D11Texture>(resource);
-                        using (_immediateContextLock.Lock(_multiThreaded))
+                        lock (_immediateContextLock)
                         {
-                            DataBox db = _immediateContext.MapSubresource(
+                            Util.GetMipLevelAndArrayLayer(texture, subresource, out uint mipLevel, out uint arrayLayer);
+                            MappedSubresource msr = _immediateContext.Map(
                                 texture.DeviceTexture,
-                                (int)subresource,
+                                (int)mipLevel,
+                                (int)arrayLayer,
                                 D3D11Formats.VdToD3D11MapMode(false, mode),
-                                SharpDX.Direct3D11.MapFlags.None,
-                                out DataStream ds);
+                                Vortice.Direct3D11.MapFlags.None,
+                                out int mipSize);
 
                             info.MappedResource = new MappedResource(
                                 resource,
                                 mode,
-                                db.DataPointer,
-                                (uint)ds.Length,
+                                msr.DataPointer,
+                                texture.Height * (uint)msr.RowPitch,
                                 subresource,
-                                (uint)db.RowPitch,
-                                (uint)db.SlicePitch);
+                                (uint)msr.RowPitch,
+                                (uint)msr.DepthPitch);
                             info.RefCount = 1;
                             info.Mode = mode;
                             _mappedResources.Add(key, info);
@@ -276,7 +386,7 @@ namespace Veldrid.D3D11
             MappedResourceCacheKey key = new MappedResourceCacheKey(resource, subresource);
             bool commitUnmap;
 
-            using (_mappedResourceLock.Lock(_multiThreaded))
+            lock (_mappedResourceLock)
             {
                 if (!_mappedResources.TryGetValue(key, out MappedResourceInfo info))
                 {
@@ -287,26 +397,30 @@ namespace Veldrid.D3D11
                 commitUnmap = info.RefCount == 0;
                 if (commitUnmap)
                 {
-                    using (_immediateContextLock.Lock(_multiThreaded))
+                    lock (_immediateContextLock)
                     {
                         if (resource is D3D11Buffer buffer)
                         {
-                            _immediateContext.UnmapSubresource(buffer.Buffer, 0);
+                            _immediateContext.Unmap(buffer.Buffer, 0);
                         }
                         else
                         {
                             D3D11Texture texture = Util.AssertSubtype<MappableResource, D3D11Texture>(resource);
-                            _immediateContext.UnmapSubresource(texture.DeviceTexture, (int)subresource);
+                            _immediateContext.Unmap(texture.DeviceTexture, (int)subresource);
                         }
 
                         bool result = _mappedResources.Remove(key);
                         Debug.Assert(result);
                     }
                 }
+                else
+                {
+                    _mappedResources[key] = info;
+                }
             }
         }
 
-        protected unsafe override void UpdateBufferCore(DeviceBuffer buffer, uint bufferOffsetInBytes, IntPtr source, uint sizeInBytes)
+        private protected unsafe override void UpdateBufferCore(DeviceBuffer buffer, uint bufferOffsetInBytes, IntPtr source, uint sizeInBytes)
         {
             D3D11Buffer d3dBuffer = Util.AssertSubtype<DeviceBuffer, D3D11Buffer>(buffer);
             if (sizeInBytes == 0)
@@ -323,20 +437,14 @@ namespace Veldrid.D3D11
 
             if (useUpdateSubresource)
             {
-                ResourceRegion? subregion = new ResourceRegion()
-                {
-                    Left = (int)bufferOffsetInBytes,
-                    Right = (int)(sizeInBytes + bufferOffsetInBytes),
-                    Bottom = 1,
-                    Back = 1
-                };
+                Box? subregion = new Box((int)bufferOffsetInBytes, 0, 0, (int)(sizeInBytes + bufferOffsetInBytes), 1, 1);
 
                 if (isUniformBuffer)
                 {
                     subregion = null;
                 }
 
-                using (_immediateContextLock.Lock(_multiThreaded))
+                lock (_immediateContextLock)
                 {
                     _immediateContext.UpdateSubresource(d3dBuffer.Buffer, 0, subregion, source, 0, 0);
                 }
@@ -350,7 +458,7 @@ namespace Veldrid.D3D11
                 }
                 else
                 {
-                    System.Buffer.MemoryCopy(
+                    Buffer.MemoryCopy(
                         source.ToPointer(),
                         (byte*)mr.Data + bufferOffsetInBytes,
                         buffer.SizeInBytes,
@@ -362,16 +470,16 @@ namespace Veldrid.D3D11
             {
                 D3D11Buffer staging = GetFreeStagingBuffer(sizeInBytes);
                 UpdateBuffer(staging, 0, source, sizeInBytes);
-                ResourceRegion sourceRegion = new ResourceRegion(0, 0, 0, (int)sizeInBytes, 1, 1);
-                using (_immediateContextLock.Lock(_multiThreaded))
+                Box sourceRegion = new Box(0, 0, 0, (int)sizeInBytes, 1, 1);
+                lock (_immediateContextLock)
                 {
                     _immediateContext.CopySubresourceRegion(
-                        staging.Buffer, 0, sourceRegion,
-                        d3dBuffer.Buffer, 0,
-                        (int)bufferOffsetInBytes, 0, 0);
+                        d3dBuffer.Buffer, 0, (int)bufferOffsetInBytes, 0, 0,
+                        staging.Buffer, 0,
+                        sourceRegion);
                 }
 
-                using (_stagingResourcesLock.Lock(_multiThreaded))
+                lock (_stagingResourcesLock)
                 {
                     _availableStagingBuffers.Add(staging);
                 }
@@ -380,7 +488,7 @@ namespace Veldrid.D3D11
 
         private D3D11Buffer GetFreeStagingBuffer(uint sizeInBytes)
         {
-            using (_stagingResourcesLock.Lock(_multiThreaded))
+            lock (_stagingResourcesLock)
             {
                 foreach (D3D11Buffer buffer in _availableStagingBuffers)
                 {
@@ -398,7 +506,7 @@ namespace Veldrid.D3D11
             return Util.AssertSubtype<DeviceBuffer, D3D11Buffer>(staging);
         }
 
-        protected unsafe override void UpdateTextureCore(
+        private protected unsafe override void UpdateTextureCore(
             Texture texture,
             IntPtr source,
             uint sizeInBytes,
@@ -437,16 +545,17 @@ namespace Veldrid.D3D11
             else
             {
                 int subresource = D3D11Util.ComputeSubresource(mipLevel, texture.MipLevels, arrayLayer);
-                ResourceRegion resourceRegion = new ResourceRegion(
+                Box resourceRegion = new Box(
                     left: (int)x,
                     right: (int)(x + width),
                     top: (int)y,
                     front: (int)z,
                     bottom: (int)(y + height),
                     back: (int)(z + depth));
-                uint srcRowPitch = FormatHelpers.GetSizeInBytes(texture.Format) * width;
-                uint srcDepthPitch = srcRowPitch * depth;
-                using (_immediateContextLock.Lock(_multiThreaded))
+
+                uint srcRowPitch = FormatHelpers.GetRowPitch(width, texture.Format);
+                uint srcDepthPitch = FormatHelpers.GetDepthPitch(srcRowPitch, height, texture.Format);
+                lock (_immediateContextLock)
                 {
                     _immediateContext.UpdateSubresource(
                         d3dTex.DeviceTexture,
@@ -466,7 +575,16 @@ namespace Veldrid.D3D11
 
         public override bool WaitForFences(Fence[] fences, bool waitAll, ulong nanosecondTimeout)
         {
-            int msTimeout = (int)(nanosecondTimeout / 1_000_000);
+            int msTimeout;
+            if (nanosecondTimeout == ulong.MaxValue)
+            {
+                msTimeout = -1;
+            }
+            else
+            {
+                msTimeout = (int)Math.Min(nanosecondTimeout / 1_000_000, int.MaxValue);
+            }
+
             ManualResetEvent[] events = GetResetEventArray(fences.Length);
             for (int i = 0; i < fences.Length; i++)
             {
@@ -488,9 +606,12 @@ namespace Veldrid.D3D11
             return result;
         }
 
+        private readonly object _resetEventsLock = new object();
+        private readonly List<ManualResetEvent[]> _resetEvents = new List<ManualResetEvent[]>();
+
         private ManualResetEvent[] GetResetEventArray(int length)
         {
-            using (_resetEventsLock.Lock(_multiThreaded))
+            lock (_resetEventsLock)
             {
                 for (int i = _resetEvents.Count - 1; i > 0; i--)
                 {
@@ -509,7 +630,7 @@ namespace Veldrid.D3D11
 
         private void ReturnResetEventArray(ManualResetEvent[] array)
         {
-            using (_resetEventsLock.Lock(_multiThreaded))
+            lock (_resetEventsLock)
             {
                 _resetEvents.Add(array);
             }
@@ -520,32 +641,60 @@ namespace Veldrid.D3D11
             Util.AssertSubtype<Fence, D3D11Fence>(fence).Reset();
         }
 
-        private static int GetSyncInterval(bool syncToVBlank)
-        {
-            return syncToVBlank ? 1 : 0;
-        }
+        internal override uint GetUniformBufferMinOffsetAlignmentCore() => 256u;
+
+        internal override uint GetStructuredBufferMinOffsetAlignmentCore() => 16;
 
         protected override void PlatformDispose()
         {
-            _immediateCL?.Dispose();
+            // Dispose staging buffers
+            foreach (DeviceBuffer buffer in _availableStagingBuffers)
+            {
+                buffer.Dispose();
+            }
+            _availableStagingBuffers.Clear();
+
             _d3d11ResourceFactory.Dispose();
             _mainSwapchain?.Dispose();
             _immediateContext.Dispose();
 
-            DeviceDebug deviceDebug = _device.QueryInterfaceOrNull<DeviceDebug>();
-
-            _device.Dispose();
-
-            if (deviceDebug != null)
+            if (IsDebugEnabled)
             {
-                deviceDebug.ReportLiveDeviceObjects(ReportingLevel.Summary);
-                deviceDebug.ReportLiveDeviceObjects(ReportingLevel.Detail);
-                deviceDebug.Dispose();
+                uint refCount = _device.Release();
+                if (refCount > 0)
+                {
+                    ID3D11Debug deviceDebug = _device.QueryInterfaceOrNull<ID3D11Debug>();
+                    if (deviceDebug != null)
+                    {
+                        deviceDebug.ReportLiveDeviceObjects(ReportLiveDeviceObjectFlags.Summary | ReportLiveDeviceObjectFlags.Detail | ReportLiveDeviceObjectFlags.IgnoreInternal);
+                        deviceDebug.Dispose();
+                    }
+                }
+
+                _dxgiAdapter.Dispose();
+
+                // Report live objects using DXGI if available (DXGIGetDebugInterface1 will fail on pre Windows 8 OS).
+                if (VorticeDXGI.DXGIGetDebugInterface1(out IDXGIDebug1 dxgiDebug).Success)
+                {
+                    dxgiDebug.ReportLiveObjects(VorticeDXGI.DebugAll, ReportLiveObjectFlags.Summary | ReportLiveObjectFlags.IgnoreInternal);
+                    dxgiDebug.Dispose();
+                }
+            }
+            else
+            {
+                _device.Dispose();
+                _dxgiAdapter.Dispose();
             }
         }
 
-        protected override void WaitForIdleCore()
+        private protected override void WaitForIdleCore()
         {
+        }
+
+        public override bool GetD3D11Info(out BackendInfoD3D11 info)
+        {
+            info = _d3d11Info;
+            return true;
         }
     }
 }

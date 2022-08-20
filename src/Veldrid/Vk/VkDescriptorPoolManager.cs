@@ -9,33 +9,34 @@ namespace Veldrid.Vk
     internal class VkDescriptorPoolManager
     {
         private readonly VkGraphicsDevice _gd;
-        private readonly bool _multiThreaded;
         private readonly List<PoolInfo> _pools = new List<PoolInfo>();
-        private readonly ConditionalLock _lock = new ConditionalLock();
+        private readonly object _lock = new object();
 
         public VkDescriptorPoolManager(VkGraphicsDevice gd)
         {
             _gd = gd;
-            _multiThreaded = !_gd.SingleThreaded;
             _pools.Add(CreateNewPool());
         }
 
         public unsafe DescriptorAllocationToken Allocate(DescriptorResourceCounts counts, VkDescriptorSetLayout setLayout)
         {
-            VkDescriptorPool pool = GetPool(counts);
-            VkDescriptorSetAllocateInfo dsAI = VkDescriptorSetAllocateInfo.New();
-            dsAI.descriptorSetCount = 1;
-            dsAI.pSetLayouts = &setLayout;
-            dsAI.descriptorPool = pool;
-            VkResult result = vkAllocateDescriptorSets(_gd.Device, ref dsAI, out VkDescriptorSet set);
-            VulkanUtil.CheckResult(result);
+            lock (_lock)
+            {
+                VkDescriptorPool pool = GetPool(counts);
+                VkDescriptorSetAllocateInfo dsAI = VkDescriptorSetAllocateInfo.New();
+                dsAI.descriptorSetCount = 1;
+                dsAI.pSetLayouts = &setLayout;
+                dsAI.descriptorPool = pool;
+                VkResult result = vkAllocateDescriptorSets(_gd.Device, ref dsAI, out VkDescriptorSet set);
+                VulkanUtil.CheckResult(result);
 
-            return new DescriptorAllocationToken(set, pool);
+                return new DescriptorAllocationToken(set, pool);
+            }
         }
 
         public void Free(DescriptorAllocationToken token, DescriptorResourceCounts counts)
         {
-            using (_lock.Lock(_multiThreaded))
+            lock (_lock)
             {
                 foreach (PoolInfo poolInfo in _pools)
                 {
@@ -49,7 +50,7 @@ namespace Veldrid.Vk
 
         private VkDescriptorPool GetPool(DescriptorResourceCounts counts)
         {
-            using (_lock.Lock(_multiThreaded))
+            lock (_lock)
             {
                 foreach (PoolInfo poolInfo in _pools)
                 {
@@ -71,7 +72,7 @@ namespace Veldrid.Vk
         {
             uint totalSets = 1000;
             uint descriptorCount = 100;
-            uint poolSizeCount = 5;
+            uint poolSizeCount = 7;
             VkDescriptorPoolSize* sizes = stackalloc VkDescriptorPoolSize[(int)poolSizeCount];
             sizes[0].type = VkDescriptorType.UniformBuffer;
             sizes[0].descriptorCount = descriptorCount;
@@ -83,6 +84,10 @@ namespace Veldrid.Vk
             sizes[3].descriptorCount = descriptorCount;
             sizes[4].type = VkDescriptorType.StorageImage;
             sizes[4].descriptorCount = descriptorCount;
+            sizes[5].type = VkDescriptorType.UniformBufferDynamic;
+            sizes[5].descriptorCount = descriptorCount;
+            sizes[6].type = VkDescriptorType.StorageBufferDynamic;
+            sizes[6].descriptorCount = descriptorCount;
 
             VkDescriptorPoolCreateInfo poolCI = VkDescriptorPoolCreateInfo.New();
             poolCI.flags = VkDescriptorPoolCreateFlags.FreeDescriptorSet;
@@ -111,9 +116,11 @@ namespace Veldrid.Vk
             public uint RemainingSets;
 
             public uint UniformBufferCount;
+            public uint UniformBufferDynamicCount;
             public uint SampledImageCount;
             public uint SamplerCount;
             public uint StorageBufferCount;
+            public uint StorageBufferDynamicCount;
             public uint StorageImageCount;
 
             public PoolInfo(VkDescriptorPool pool, uint totalSets, uint descriptorCount)
@@ -121,9 +128,11 @@ namespace Veldrid.Vk
                 Pool = pool;
                 RemainingSets = totalSets;
                 UniformBufferCount = descriptorCount;
+                UniformBufferDynamicCount = descriptorCount;
                 SampledImageCount = descriptorCount;
                 SamplerCount = descriptorCount;
                 StorageBufferCount = descriptorCount;
+                StorageBufferDynamicCount = descriptorCount;
                 StorageImageCount = descriptorCount;
             }
 
@@ -131,16 +140,20 @@ namespace Veldrid.Vk
             {
                 if (RemainingSets > 0
                     && UniformBufferCount >= counts.UniformBufferCount
+                    && UniformBufferDynamicCount >= counts.UniformBufferDynamicCount
                     && SampledImageCount >= counts.SampledImageCount
                     && SamplerCount >= counts.SamplerCount
                     && StorageBufferCount >= counts.SamplerCount
+                    && StorageBufferDynamicCount >= counts.StorageBufferDynamicCount
                     && StorageImageCount >= counts.StorageImageCount)
                 {
                     RemainingSets -= 1;
                     UniformBufferCount -= counts.UniformBufferCount;
+                    UniformBufferDynamicCount -= counts.UniformBufferDynamicCount;
                     SampledImageCount -= counts.SampledImageCount;
                     SamplerCount -= counts.SamplerCount;
                     StorageBufferCount -= counts.StorageBufferCount;
+                    StorageBufferDynamicCount -= counts.StorageBufferDynamicCount;
                     StorageImageCount -= counts.StorageImageCount;
                     return true;
                 }

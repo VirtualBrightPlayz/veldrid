@@ -6,8 +6,11 @@ namespace Veldrid
     /// A device resource used to store arbitrary image data in a specific format.
     /// See <see cref="TextureDescription"/>.
     /// </summary>
-    public abstract class Texture : DeviceResource, MappableResource, IDisposable
+    public abstract class Texture : DeviceResource, MappableResource, IDisposable, BindableResource
     {
+        private readonly object _fullTextureViewLock = new object();
+        private TextureView _fullTextureView;
+
         /// <summary>
         /// Calculates the subresource index, given a mipmap level and array layer.
         /// </summary>
@@ -62,10 +65,42 @@ namespace Veldrid
         /// tools.
         /// </summary>
         public abstract string Name { get; set; }
+        /// <summary>
+        /// A bool indicating whether this instance has been disposed.
+        /// </summary>
+        public abstract bool IsDisposed { get; }
+
+        internal TextureView GetFullTextureView(GraphicsDevice gd)
+        {
+            lock (_fullTextureViewLock)
+            {
+                if (_fullTextureView == null)
+                {
+                    _fullTextureView = CreateFullTextureView(gd);
+                }
+
+                return _fullTextureView;
+            }
+        }
+
+        private protected virtual TextureView CreateFullTextureView(GraphicsDevice gd)
+        {
+            return gd.ResourceFactory.CreateTextureView(this);
+        }
 
         /// <summary>
         /// Frees unmanaged device resources controlled by this instance.
         /// </summary>
-        public abstract void Dispose();
+        public virtual void Dispose()
+        {
+            lock (_fullTextureViewLock)
+            {
+                _fullTextureView?.Dispose();
+            }
+
+            DisposeCore();
+        }
+
+        private protected abstract void DisposeCore();
     }
 }

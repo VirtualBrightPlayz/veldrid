@@ -29,6 +29,15 @@ namespace Veldrid.Tests
         }
 
         [Fact]
+        public void UpdateBuffer_Span_Succeeds()
+        {
+            DeviceBuffer buffer = CreateBuffer(64, BufferUsage.VertexBuffer);
+            float[] data = new float[16];
+            GD.UpdateBuffer(buffer, 0, (ReadOnlySpan<float>)data);
+            GD.WaitForIdle();
+        }
+
+        [Fact]
         public void UpdateBuffer_ThenMapRead_Succeeds()
         {
             DeviceBuffer buffer = CreateBuffer(1024, BufferUsage.Staging);
@@ -441,6 +450,12 @@ namespace Veldrid.Tests
         [InlineData(BufferUsage.Staging)]
         public void CreateBuffer_UsageFlagsCoverage(BufferUsage usage)
         {
+            if ((usage & BufferUsage.StructuredBufferReadOnly) != 0
+                || (usage & BufferUsage.StructuredBufferReadWrite) != 0)
+            {
+                return;
+            }
+
             BufferDescription description = new BufferDescription(64, usage);
             if ((usage & BufferUsage.StructuredBufferReadOnly) != 0 || (usage & BufferUsage.StructuredBufferReadWrite) != 0)
             {
@@ -451,6 +466,99 @@ namespace Veldrid.Tests
             GD.WaitForIdle();
         }
 
+        [Theory]
+        [InlineData(BufferUsage.UniformBuffer)]
+        [InlineData(BufferUsage.UniformBuffer | BufferUsage.Dynamic)]
+        [InlineData(BufferUsage.VertexBuffer)]
+        [InlineData(BufferUsage.VertexBuffer | BufferUsage.Dynamic)]
+        [InlineData(BufferUsage.IndexBuffer)]
+        [InlineData(BufferUsage.IndexBuffer | BufferUsage.Dynamic)]
+        [InlineData(BufferUsage.IndirectBuffer)]
+        [InlineData(BufferUsage.VertexBuffer | BufferUsage.IndexBuffer)]
+        [InlineData(BufferUsage.VertexBuffer | BufferUsage.IndexBuffer | BufferUsage.Dynamic)]
+        [InlineData(BufferUsage.VertexBuffer | BufferUsage.IndexBuffer | BufferUsage.IndirectBuffer)]
+        [InlineData(BufferUsage.IndexBuffer | BufferUsage.IndirectBuffer)]
+        [InlineData(BufferUsage.Staging)]
+        public unsafe void CopyBuffer_ZeroSize(BufferUsage usage)
+        {
+            DeviceBuffer src = CreateBuffer(1024, usage);
+            DeviceBuffer dst = CreateBuffer(1024, usage);
+
+            byte[] initialDataSrc = Enumerable.Range(0, 1024).Select(i => (byte)i).ToArray();
+            byte[] initialDataDst = Enumerable.Range(0, 1024).Select(i => (byte)(i * 2)).ToArray();
+            GD.UpdateBuffer(src, 0, initialDataSrc);
+            GD.UpdateBuffer(dst, 0, initialDataDst);
+
+            CommandList cl = RF.CreateCommandList();
+            cl.Begin();
+            cl.CopyBuffer(src, 0, dst, 0, 0);
+            cl.End();
+            GD.SubmitCommands(cl);
+            GD.WaitForIdle();
+
+            DeviceBuffer readback = GetReadback(dst);
+
+            MappedResourceView<byte> readMap = GD.Map<byte>(readback, MapMode.Read);
+            for (int i = 0; i < 1024; i++)
+            {
+                Assert.Equal((byte)(i * 2), readMap[i]);
+            }
+            GD.Unmap(readback);
+        }
+
+        [Theory]
+        [InlineData(BufferUsage.UniformBuffer, false)]
+        [InlineData(BufferUsage.UniformBuffer, true)]
+        [InlineData(BufferUsage.UniformBuffer | BufferUsage.Dynamic, false)]
+        [InlineData(BufferUsage.UniformBuffer | BufferUsage.Dynamic, true)]
+        [InlineData(BufferUsage.VertexBuffer, false)]
+        [InlineData(BufferUsage.VertexBuffer, true)]
+        [InlineData(BufferUsage.VertexBuffer | BufferUsage.Dynamic, false)]
+        [InlineData(BufferUsage.VertexBuffer | BufferUsage.Dynamic, true)]
+        [InlineData(BufferUsage.IndexBuffer, false)]
+        [InlineData(BufferUsage.IndexBuffer, true)]
+        [InlineData(BufferUsage.IndirectBuffer, false)]
+        [InlineData(BufferUsage.IndirectBuffer, true)]
+        [InlineData(BufferUsage.Staging, false)]
+        [InlineData(BufferUsage.Staging, true)]
+        public unsafe void UpdateBuffer_ZeroSize(BufferUsage usage, bool useCommandListUpdate)
+        {
+            DeviceBuffer buffer = CreateBuffer(1024, usage);
+
+            byte[] initialData = Enumerable.Range(0, 1024).Select(i => (byte)i).ToArray();
+            byte[] otherData = Enumerable.Range(0, 1024).Select(i => (byte)(i + 10)).ToArray();
+            GD.UpdateBuffer(buffer, 0, initialData);
+
+            if (useCommandListUpdate)
+            {
+                CommandList cl = RF.CreateCommandList();
+                cl.Begin();
+                fixed (byte* dataPtr = otherData)
+                {
+                    cl.UpdateBuffer(buffer, 0, (IntPtr)dataPtr, 0);
+                }
+                cl.End();
+                GD.SubmitCommands(cl);
+                GD.WaitForIdle();
+            }
+            else
+            {
+                fixed (byte* dataPtr = otherData)
+                {
+                    GD.UpdateBuffer(buffer, 0, (IntPtr)dataPtr, 0);
+                }
+            }
+
+            DeviceBuffer readback = GetReadback(buffer);
+
+            MappedResourceView<byte> readMap = GD.Map<byte>(readback, MapMode.Read);
+            for (int i = 0; i < 1024; i++)
+            {
+                Assert.Equal((byte)i, readMap[i]);
+            }
+            GD.Unmap(readback);
+        }
+
         private DeviceBuffer CreateBuffer(uint size, BufferUsage usage)
         {
             return RF.CreateBuffer(new BufferDescription(size, usage));
@@ -458,18 +566,23 @@ namespace Veldrid.Tests
     }
 
 #if TEST_OPENGL
+    [Trait("Backend", "OpenGL")]
     public class OpenGLBufferTests : BufferTestBase<OpenGLDeviceCreator> { }
 #endif
 #if TEST_OPENGLES
+    [Trait("Backend", "OpenGLES")]
     public class OpenGLESBufferTests : BufferTestBase<OpenGLESDeviceCreator> { }
 #endif
 #if TEST_VULKAN
+    [Trait("Backend", "Vulkan")]
     public class VulkanBufferTests : BufferTestBase<VulkanDeviceCreator> { }
 #endif
 #if TEST_D3D11
+    [Trait("Backend", "D3D11")]
     public class D3D11BufferTests : BufferTestBase<D3D11DeviceCreator> { }
 #endif
 #if TEST_METAL
+    [Trait("Backend", "Metal")]
     public class MetalBufferTests : BufferTestBase<MetalDeviceCreator> { }
 #endif
 }

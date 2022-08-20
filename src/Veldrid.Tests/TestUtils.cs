@@ -17,6 +17,7 @@ namespace Veldrid.Tests
             if (result != 0)
             {
                 InitializationFailedMessage = GetString(Sdl2Native.SDL_GetError());
+                Console.WriteLine($"Failed to initialize SDL2: {InitializationFailedMessage}");
                 InitializedSdl2 = false;
             }
             else
@@ -121,6 +122,11 @@ namespace Veldrid.Tests
 
         public static GraphicsDevice CreateMetalDevice()
         {
+            if (!GraphicsDevice.IsBackendSupported(GraphicsBackend.Metal))
+            {
+                Console.WriteLine("Metal is not supported on this system.");
+                return null;
+            }
             return GraphicsDevice.CreateMetal(new GraphicsDeviceOptions(true, null, false, ResourceBindingModel.Improved));
         }
 
@@ -162,13 +168,21 @@ namespace Veldrid.Tests
         private readonly Sdl2Window _window;
         private readonly GraphicsDevice _gd;
         private readonly DisposeCollectorResourceFactory _factory;
+        private readonly RenderDoc _renderDoc;
 
         public GraphicsDevice GD => _gd;
         public ResourceFactory RF => _factory;
         public Sdl2Window Window => _window;
+        public RenderDoc RenderDoc => _renderDoc;
 
         public GraphicsDeviceTestBase()
         {
+            if (Environment.GetEnvironmentVariable("VELDRID_TESTS_ENABLE_RENDERDOC") == "1"
+                && RenderDoc.Load(out _renderDoc))
+            {
+                _renderDoc.APIValidation = true;
+                _renderDoc.DebugOutputMute = false;
+            }
             Activator.CreateInstance<T>().CreateGraphicsDevice(out _window, out _gd);
             _factory = new DisposeCollectorResourceFactory(_gd.ResourceFactory);
         }
@@ -202,9 +216,14 @@ namespace Veldrid.Tests
             }
             else
             {
+                uint layers = texture.ArrayLayers;
+                if ((texture.Usage & TextureUsage.Cubemap) != 0)
+                {
+                    layers *= 6;
+                }
                 TextureDescription desc = new TextureDescription(
                     texture.Width, texture.Height, texture.Depth,
-                    texture.MipLevels, texture.ArrayLayers,
+                    texture.MipLevels, layers,
                     texture.Format,
                     TextureUsage.Staging, texture.Type);
                 Texture readback = RF.CreateTexture(ref desc);

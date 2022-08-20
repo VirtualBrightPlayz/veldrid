@@ -10,10 +10,13 @@ namespace Veldrid.OpenGL
         private readonly SamplerDescription _description;
         private readonly InternalSamplerState _noMipmapState;
         private readonly InternalSamplerState _mipmapState;
+        private bool _disposeRequested;
 
         private string _name;
         private bool _nameChanged;
         public override string Name { get => _name; set { _name = value; _nameChanged = true; } }
+
+        public override bool IsDisposed => _disposeRequested;
 
         public uint NoMipmapSampler => _noMipmapState.Sampler;
         public uint MipmapSampler => _mipmapState.Sampler;
@@ -25,11 +28,6 @@ namespace Veldrid.OpenGL
 
             _mipmapState = new InternalSamplerState();
             _noMipmapState = new InternalSamplerState();
-
-            if (!gd.MultiThreaded)
-            {
-                EnsureResourcesCreated();
-            }
         }
 
         public bool Created { get; private set; }
@@ -61,7 +59,11 @@ namespace Veldrid.OpenGL
 
         public override void Dispose()
         {
-            _gd.EnqueueDisposal(this);
+            if (!_disposeRequested)
+            {
+                _disposeRequested = true;
+                _gd.EnqueueDisposal(this);
+            }
         }
 
         public void DestroyGLResources()
@@ -81,11 +83,11 @@ namespace Veldrid.OpenGL
                 glGenSamplers(1, out _sampler);
                 CheckLastError();
 
-                glSamplerParameteri(_sampler, SamplerParameterName.TextureWrapR, (int)OpenGLFormats.VdToGLTextureWrapMode(description.AddressModeU));
+                glSamplerParameteri(_sampler, SamplerParameterName.TextureWrapS, (int)OpenGLFormats.VdToGLTextureWrapMode(description.AddressModeU));
                 CheckLastError();
-                glSamplerParameteri(_sampler, SamplerParameterName.TextureWrapS, (int)OpenGLFormats.VdToGLTextureWrapMode(description.AddressModeV));
+                glSamplerParameteri(_sampler, SamplerParameterName.TextureWrapT, (int)OpenGLFormats.VdToGLTextureWrapMode(description.AddressModeV));
                 CheckLastError();
-                glSamplerParameteri(_sampler, SamplerParameterName.TextureWrapT, (int)OpenGLFormats.VdToGLTextureWrapMode(description.AddressModeW));
+                glSamplerParameteri(_sampler, SamplerParameterName.TextureWrapR, (int)OpenGLFormats.VdToGLTextureWrapMode(description.AddressModeW));
                 CheckLastError();
 
                 if (description.AddressModeU == SamplerAddressMode.Border

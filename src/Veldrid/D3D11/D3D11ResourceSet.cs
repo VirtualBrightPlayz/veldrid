@@ -3,23 +3,15 @@
     internal class D3D11ResourceSet : ResourceSet
     {
         private string _name;
+        private bool _disposed;
 
-        public BindableResource[] Resources { get; }
+        public new BindableResource[] Resources { get; }
         public new D3D11ResourceLayout Layout { get; }
 
-        public D3D11ResourceSet(ref ResourceSetDescription description)
-            : base(ref description)
+        public D3D11ResourceSet(ref ResourceSetDescription description) : base(ref description)
         {
             Resources = Util.ShallowClone(description.BoundResources);
             Layout = Util.AssertSubtype<ResourceLayout, D3D11ResourceLayout>(description.Layout);
-
-            foreach (BindableResource resource in description.BoundResources)
-            {
-                if (!(resource is D3D11Buffer || resource is D3D11TextureView || resource is D3D11Sampler))
-                {
-                    throw new VeldridException("Invalid resource type present in D3D11ResourceSet: " + resource.GetType().Name);
-                }
-            }
         }
 
         public override string Name
@@ -28,8 +20,11 @@
             set => _name = value;
         }
 
+        public override bool IsDisposed => _disposed;
+
         public override void Dispose()
         {
+            _disposed = true;
         }
     }
 }

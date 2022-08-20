@@ -8,7 +8,7 @@ namespace Veldrid.OpenGL
     internal class OpenGLResourceFactory : ResourceFactory
     {
         private readonly OpenGLGraphicsDevice _gd;
-        private readonly StagingMemoryPool _pool = new StagingMemoryPool();
+        private readonly StagingMemoryPool _pool;
 
         public override GraphicsBackend BackendType => _gd.BackendType;
 
@@ -16,13 +16,12 @@ namespace Veldrid.OpenGL
             : base(gd.Features)
         {
             _gd = gd;
+            _pool = gd.StagingMemoryPool;
         }
 
         public override CommandList CreateCommandList(ref CommandListDescription description)
         {
-            if (_gd.MultiThreaded)
-                return new OpenGLCommandList(_gd, ref description);
-            return _gd.ImmediateCommandList;
+            return new OpenGLCommandList(_gd, ref description);
         }
 
         public override Framebuffer CreateFramebuffer(ref FramebufferDescription description)
@@ -37,7 +36,9 @@ namespace Veldrid.OpenGL
 
         public override Pipeline CreateComputePipeline(ref ComputePipelineDescription description)
         {
-            return new OpenGLPipeline(_gd, ref description);
+            OpenGLPipeline pipeline = new OpenGLPipeline(_gd, ref description);
+            _gd.EnsureResourceInitialized(pipeline);
+            return pipeline;
         }
 
         public override ResourceLayout CreateResourceLayout(ref ResourceLayoutDescription description)
@@ -47,6 +48,7 @@ namespace Veldrid.OpenGL
 
         public override ResourceSet CreateResourceSet(ref ResourceSetDescription description)
         {
+            ValidationHelpers.ValidateResourceSet(_gd, ref description);
             return new OpenGLResourceSet(ref description);
         }
 
@@ -58,12 +60,19 @@ namespace Veldrid.OpenGL
         protected override Shader CreateShaderCore(ref ShaderDescription description)
         {
             StagingBlock stagingBlock = _pool.Stage(description.ShaderBytes);
-            return new OpenGLShader(_gd, description.Stage, stagingBlock);
+            OpenGLShader shader = new OpenGLShader(_gd, description.Stage, stagingBlock, description.EntryPoint);
+            _gd.EnsureResourceInitialized(shader);
+            return shader;
         }
 
         protected override Texture CreateTextureCore(ref TextureDescription description)
         {
             return new OpenGLTexture(_gd, ref description);
+        }
+
+        protected override Texture CreateTextureCore(ulong nativeTexture, ref TextureDescription description)
+        {
+            return new OpenGLTexture(_gd, (uint)nativeTexture, ref description);
         }
 
         protected override TextureView CreateTextureViewCore(ref TextureViewDescription description)

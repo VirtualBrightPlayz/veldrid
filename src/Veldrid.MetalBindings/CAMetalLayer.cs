@@ -9,10 +9,20 @@ namespace Veldrid.MetalBindings
 
         public CAMetalLayer(IntPtr ptr) => NativePtr = ptr;
 
-        public static CAMetalLayer New()
+        public static CAMetalLayer New() => s_class.AllocInit<CAMetalLayer>();
+
+        public static bool TryCast(IntPtr layerPointer, out CAMetalLayer metalLayer)
         {
-            var cls = new ObjCClass("CAMetalLayer");
-            return cls.AllocInit<CAMetalLayer>();
+            var layerObject = new NSObject(layerPointer);
+
+            if (layerObject.IsKindOfClass(s_class))
+            {
+                metalLayer = new CAMetalLayer(layerPointer);
+                return true;
+            }
+
+            metalLayer = default;
+            return false;
         }
 
         public MTLDevice device
@@ -53,6 +63,13 @@ namespace Veldrid.MetalBindings
 
         public CAMetalDrawable nextDrawable() => objc_msgSend<CAMetalDrawable>(NativePtr, sel_nextDrawable);
 
+        public Bool8 displaySyncEnabled
+        {
+            get => bool8_objc_msgSend(NativePtr, "displaySyncEnabled");
+            set => objc_msgSend(NativePtr, "setDisplaySyncEnabled:", value);
+        }
+
+        private static readonly ObjCClass s_class = new ObjCClass(nameof(CAMetalLayer));
         private static readonly Selector sel_device = "device";
         private static readonly Selector sel_setDevice = "setDevice:";
         private static readonly Selector sel_pixelFormat = "pixelFormat";

@@ -1,8 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
-using SharpDX.Direct3D;
-using SharpDX.Direct3D11;
-using SharpDX.DXGI;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
 
 namespace Veldrid.D3D11
 {
@@ -68,8 +67,12 @@ namespace Veldrid.D3D11
 
                 case PixelFormat.R8_G8_B8_A8_UNorm:
                     return Format.R8G8B8A8_UNorm;
+                case PixelFormat.R8_G8_B8_A8_UNorm_SRgb:
+                    return Format.R8G8B8A8_UNorm_SRgb;
                 case PixelFormat.B8_G8_R8_A8_UNorm:
                     return Format.B8G8R8A8_UNorm;
+                case PixelFormat.B8_G8_R8_A8_UNorm_SRgb:
+                    return Format.B8G8R8A8_UNorm_SRgb;
                 case PixelFormat.R8_G8_B8_A8_SNorm:
                     return Format.R8G8B8A8_SNorm;
                 case PixelFormat.R8_G8_B8_A8_UInt:
@@ -98,10 +101,29 @@ namespace Veldrid.D3D11
                 case PixelFormat.BC1_Rgb_UNorm:
                 case PixelFormat.BC1_Rgba_UNorm:
                     return Format.BC1_UNorm;
+                case PixelFormat.BC1_Rgb_UNorm_SRgb:
+                case PixelFormat.BC1_Rgba_UNorm_SRgb:
+                    return Format.BC1_UNorm_SRgb;
                 case PixelFormat.BC2_UNorm:
                     return Format.BC2_UNorm;
+                case PixelFormat.BC2_UNorm_SRgb:
+                    return Format.BC2_UNorm_SRgb;
                 case PixelFormat.BC3_UNorm:
                     return Format.BC3_UNorm;
+                case PixelFormat.BC3_UNorm_SRgb:
+                    return Format.BC3_UNorm_SRgb;
+                case PixelFormat.BC4_UNorm:
+                    return Format.BC4_UNorm;
+                case PixelFormat.BC4_SNorm:
+                    return Format.BC4_SNorm;
+                case PixelFormat.BC5_UNorm:
+                    return Format.BC5_UNorm;
+                case PixelFormat.BC5_SNorm:
+                    return Format.BC5_SNorm;
+                case PixelFormat.BC7_UNorm:
+                    return Format.BC7_UNorm;
+                case PixelFormat.BC7_UNorm_SRgb:
+                    return Format.BC7_UNorm_SRgb;
 
                 case PixelFormat.D24_UNorm_S8_UInt:
                     Debug.Assert(depthFormat);
@@ -124,6 +146,115 @@ namespace Veldrid.D3D11
 
                 default:
                     throw Illegal.Value<PixelFormat>();
+            }
+        }
+
+        internal static Format GetTypelessFormat(Format format)
+        {
+            switch (format)
+            {
+                case Format.R32G32B32A32_Typeless:
+                case Format.R32G32B32A32_Float:
+                case Format.R32G32B32A32_UInt:
+                case Format.R32G32B32A32_SInt:
+                    return Format.R32G32B32A32_Typeless;
+                case Format.R32G32B32_Typeless:
+                case Format.R32G32B32_Float:
+                case Format.R32G32B32_UInt:
+                case Format.R32G32B32_SInt:
+                    return Format.R32G32B32_Typeless;
+                case Format.R16G16B16A16_Typeless:
+                case Format.R16G16B16A16_Float:
+                case Format.R16G16B16A16_UNorm:
+                case Format.R16G16B16A16_UInt:
+                case Format.R16G16B16A16_SNorm:
+                case Format.R16G16B16A16_SInt:
+                    return Format.R16G16B16A16_Typeless;
+                case Format.R32G32_Typeless:
+                case Format.R32G32_Float:
+                case Format.R32G32_UInt:
+                case Format.R32G32_SInt:
+                    return Format.R32G32_Typeless;
+                case Format.R10G10B10A2_Typeless:
+                case Format.R10G10B10A2_UNorm:
+                case Format.R10G10B10A2_UInt:
+                    return Format.R10G10B10A2_Typeless;
+                case Format.R8G8B8A8_Typeless:
+                case Format.R8G8B8A8_UNorm:
+                case Format.R8G8B8A8_UNorm_SRgb:
+                case Format.R8G8B8A8_UInt:
+                case Format.R8G8B8A8_SNorm:
+                case Format.R8G8B8A8_SInt:
+                    return Format.R8G8B8A8_Typeless;
+                case Format.R16G16_Typeless:
+                case Format.R16G16_Float:
+                case Format.R16G16_UNorm:
+                case Format.R16G16_UInt:
+                case Format.R16G16_SNorm:
+                case Format.R16G16_SInt:
+                    return Format.R16G16_Typeless;
+                case Format.R32_Typeless:
+                case Format.D32_Float:
+                case Format.R32_Float:
+                case Format.R32_UInt:
+                case Format.R32_SInt:
+                    return Format.R32_Typeless;
+                case Format.R24G8_Typeless:
+                case Format.D24_UNorm_S8_UInt:
+                case Format.R24_UNorm_X8_Typeless:
+                case Format.X24_Typeless_G8_UInt:
+                    return Format.R24G8_Typeless;
+                case Format.R8G8_Typeless:
+                case Format.R8G8_UNorm:
+                case Format.R8G8_UInt:
+                case Format.R8G8_SNorm:
+                case Format.R8G8_SInt:
+                    return Format.R8G8_Typeless;
+                case Format.R16_Typeless:
+                case Format.R16_Float:
+                case Format.D16_UNorm:
+                case Format.R16_UNorm:
+                case Format.R16_UInt:
+                case Format.R16_SNorm:
+                case Format.R16_SInt:
+                    return Format.R16_Typeless;
+                case Format.R8_Typeless:
+                case Format.R8_UNorm:
+                case Format.R8_UInt:
+                case Format.R8_SNorm:
+                case Format.R8_SInt:
+                case Format.A8_UNorm:
+                    return Format.R8_Typeless;
+                case Format.BC1_Typeless:
+                case Format.BC1_UNorm:
+                case Format.BC1_UNorm_SRgb:
+                    return Format.BC1_Typeless;
+                case Format.BC2_Typeless:
+                case Format.BC2_UNorm:
+                case Format.BC2_UNorm_SRgb:
+                    return Format.BC2_Typeless;
+                case Format.BC3_Typeless:
+                case Format.BC3_UNorm:
+                case Format.BC3_UNorm_SRgb:
+                    return Format.BC3_Typeless;
+                case Format.BC4_Typeless:
+                case Format.BC4_UNorm:
+                case Format.BC4_SNorm:
+                    return Format.BC4_Typeless;
+                case Format.BC5_Typeless:
+                case Format.BC5_UNorm:
+                case Format.BC5_SNorm:
+                    return Format.BC5_Typeless;
+                case Format.B8G8R8A8_Typeless:
+                case Format.B8G8R8A8_UNorm:
+                case Format.B8G8R8A8_UNorm_SRgb:
+                    return Format.B8G8R8A8_Typeless;
+                case Format.BC7_Typeless:
+                case Format.BC7_UNorm:
+                case Format.BC7_UNorm_SRgb:
+                    return Format.BC7_Typeless;
+                default:
+                    return format;
             }
         }
 
@@ -155,6 +286,38 @@ namespace Veldrid.D3D11
             return flags;
         }
 
+        internal static TextureUsage GetVdUsage(BindFlags bindFlags, CpuAccessFlags cpuFlags, ResourceOptionFlags optionFlags)
+        {
+            TextureUsage usage = 0;
+            if ((bindFlags & BindFlags.RenderTarget) != 0)
+            {
+                usage |= TextureUsage.RenderTarget;
+            }
+            if ((bindFlags & BindFlags.DepthStencil) != 0)
+            {
+                usage |= TextureUsage.DepthStencil;
+            }
+            if ((bindFlags & BindFlags.ShaderResource) != 0)
+            {
+                usage |= TextureUsage.Sampled;
+            }
+            if ((bindFlags & BindFlags.UnorderedAccess) != 0)
+            {
+                usage |= TextureUsage.Storage;
+            }
+
+            if ((optionFlags & ResourceOptionFlags.TextureCube) != 0)
+            {
+                usage |= TextureUsage.Cubemap;
+            }
+            if ((optionFlags & ResourceOptionFlags.GenerateMips) != 0)
+            {
+                usage |= TextureUsage.GenerateMipmaps;
+            }
+
+            return usage;
+        }
+
         internal static bool IsUnsupportedFormat(PixelFormat format)
         {
             return format == PixelFormat.ETC2_R8_G8_B8_UNorm
@@ -179,34 +342,34 @@ namespace Veldrid.D3D11
             }
         }
 
-        internal static BlendOption VdToD3D11BlendOption(BlendFactor factor)
+        internal static Blend VdToD3D11Blend(BlendFactor factor)
         {
             switch (factor)
             {
                 case BlendFactor.Zero:
-                    return BlendOption.Zero;
+                    return Blend.Zero;
                 case BlendFactor.One:
-                    return BlendOption.One;
+                    return Blend.One;
                 case BlendFactor.SourceAlpha:
-                    return BlendOption.SourceAlpha;
+                    return Blend.SourceAlpha;
                 case BlendFactor.InverseSourceAlpha:
-                    return BlendOption.InverseSourceAlpha;
+                    return Blend.InverseSourceAlpha;
                 case BlendFactor.DestinationAlpha:
-                    return BlendOption.DestinationAlpha;
+                    return Blend.DestinationAlpha;
                 case BlendFactor.InverseDestinationAlpha:
-                    return BlendOption.InverseDestinationAlpha;
+                    return Blend.InverseDestinationAlpha;
                 case BlendFactor.SourceColor:
-                    return BlendOption.SourceColor;
+                    return Blend.SourceColor;
                 case BlendFactor.InverseSourceColor:
-                    return BlendOption.InverseSourceColor;
+                    return Blend.InverseSourceColor;
                 case BlendFactor.DestinationColor:
-                    return BlendOption.DestinationColor;
+                    return Blend.DestinationColor;
                 case BlendFactor.InverseDestinationColor:
-                    return BlendOption.InverseDestinationColor;
+                    return Blend.InverseDestinationColor;
                 case BlendFactor.BlendFactor:
-                    return BlendOption.BlendFactor;
+                    return Blend.BlendFactor;
                 case BlendFactor.InverseBlendFactor:
-                    return BlendOption.BlendFactor;
+                    return Blend.InverseBlendFactor;
                 default:
                     throw Illegal.Value<BlendFactor>();
             }
@@ -225,26 +388,26 @@ namespace Veldrid.D3D11
             }
         }
 
-        internal static SharpDX.Direct3D11.StencilOperation VdToD3D11StencilOperation(StencilOperation op)
+        internal static Vortice.Direct3D11.StencilOperation VdToD3D11StencilOperation(StencilOperation op)
         {
             switch (op)
             {
                 case StencilOperation.Keep:
-                    return SharpDX.Direct3D11.StencilOperation.Keep;
+                    return Vortice.Direct3D11.StencilOperation.Keep;
                 case StencilOperation.Zero:
-                    return SharpDX.Direct3D11.StencilOperation.Zero;
+                    return Vortice.Direct3D11.StencilOperation.Zero;
                 case StencilOperation.Replace:
-                    return SharpDX.Direct3D11.StencilOperation.Replace;
+                    return Vortice.Direct3D11.StencilOperation.Replace;
                 case StencilOperation.IncrementAndClamp:
-                    return SharpDX.Direct3D11.StencilOperation.IncrementAndClamp;
+                    return Vortice.Direct3D11.StencilOperation.IncrementSaturate;
                 case StencilOperation.DecrementAndClamp:
-                    return SharpDX.Direct3D11.StencilOperation.DecrementAndClamp;
+                    return Vortice.Direct3D11.StencilOperation.DecrementSaturate;
                 case StencilOperation.Invert:
-                    return SharpDX.Direct3D11.StencilOperation.Invert;
+                    return Vortice.Direct3D11.StencilOperation.Invert;
                 case StencilOperation.IncrementAndWrap:
-                    return SharpDX.Direct3D11.StencilOperation.Increment;
+                    return Vortice.Direct3D11.StencilOperation.Increment;
                 case StencilOperation.DecrementAndWrap:
-                    return SharpDX.Direct3D11.StencilOperation.Decrement;
+                    return Vortice.Direct3D11.StencilOperation.Decrement;
                 default:
                     throw Illegal.Value<StencilOperation>();
             }
@@ -312,8 +475,13 @@ namespace Veldrid.D3D11
 
                 case Format.R8G8B8A8_UNorm:
                     return PixelFormat.R8_G8_B8_A8_UNorm;
+                case Format.R8G8B8A8_UNorm_SRgb:
+                    return PixelFormat.R8_G8_B8_A8_UNorm_SRgb;
+
                 case Format.B8G8R8A8_UNorm:
                     return PixelFormat.B8_G8_R8_A8_UNorm;
+                case Format.B8G8R8A8_UNorm_SRgb:
+                    return PixelFormat.B8_G8_R8_A8_UNorm_SRgb;
                 case Format.R8G8B8A8_SNorm:
                     return PixelFormat.R8_G8_B8_A8_SNorm;
                 case Format.R8G8B8A8_UInt:
@@ -346,6 +514,16 @@ namespace Veldrid.D3D11
                     return PixelFormat.BC2_UNorm;
                 case Format.BC3_UNorm:
                     return PixelFormat.BC3_UNorm;
+                case Format.BC4_UNorm:
+                    return PixelFormat.BC4_UNorm;
+                case Format.BC4_SNorm:
+                    return PixelFormat.BC4_SNorm;
+                case Format.BC5_UNorm:
+                    return PixelFormat.BC5_UNorm;
+                case Format.BC5_SNorm:
+                    return PixelFormat.BC5_SNorm;
+                case Format.BC7_UNorm:
+                    return PixelFormat.BC7_UNorm;
 
                 case Format.D24_UNorm_S8_UInt:
                     return PixelFormat.D24_UNorm_S8_UInt;
@@ -363,20 +541,6 @@ namespace Veldrid.D3D11
             }
         }
 
-        internal static TextureSampleCount ToVdSampleCount(SampleDescription sampleDescription)
-        {
-            switch (sampleDescription.Count)
-            {
-                case 1: return TextureSampleCount.Count1;
-                case 2: return TextureSampleCount.Count2;
-                case 4: return TextureSampleCount.Count4;
-                case 8: return TextureSampleCount.Count8;
-                case 16: return TextureSampleCount.Count16;
-                case 32: return TextureSampleCount.Count32;
-                default: throw new VeldridException("Unsupported multisample count: " + sampleDescription.Count);
-            }
-        }
-
         internal static BlendOperation VdToD3D11BlendOperation(BlendFunction function)
         {
             switch (function)
@@ -388,12 +552,28 @@ namespace Veldrid.D3D11
                 case BlendFunction.ReverseSubtract:
                     return BlendOperation.ReverseSubtract;
                 case BlendFunction.Minimum:
-                    return BlendOperation.Minimum;
+                    return BlendOperation.Min;
                 case BlendFunction.Maximum:
-                    return BlendOperation.Maximum;
+                    return BlendOperation.Max;
                 default:
                     throw Illegal.Value<BlendFunction>();
             }
+        }
+
+        internal static ColorWriteEnable VdToD3D11ColorWriteEnable(ColorWriteMask mask)
+        {
+            ColorWriteEnable enable = ColorWriteEnable.None;
+
+            if ((mask & ColorWriteMask.Red) == ColorWriteMask.Red)
+                enable |= ColorWriteEnable.Red;
+            if ((mask & ColorWriteMask.Green) == ColorWriteMask.Green)
+                enable |= ColorWriteEnable.Green;
+            if ((mask & ColorWriteMask.Blue) == ColorWriteMask.Blue)
+                enable |= ColorWriteEnable.Blue;
+            if ((mask & ColorWriteMask.Alpha) == ColorWriteMask.Alpha)
+                enable |= ColorWriteEnable.Alpha;
+
+            return enable;
         }
 
         internal static Filter ToD3D11Filter(SamplerFilter filter, bool isComparison)
@@ -423,35 +603,35 @@ namespace Veldrid.D3D11
             }
         }
 
-        internal static SharpDX.Direct3D11.MapMode VdToD3D11MapMode(bool isDynamic, MapMode mode)
+        internal static Vortice.Direct3D11.MapMode VdToD3D11MapMode(bool isDynamic, MapMode mode)
         {
             switch (mode)
             {
                 case MapMode.Read:
-                    return SharpDX.Direct3D11.MapMode.Read;
+                    return Vortice.Direct3D11.MapMode.Read;
                 case MapMode.Write:
-                    return isDynamic ? SharpDX.Direct3D11.MapMode.WriteDiscard : SharpDX.Direct3D11.MapMode.Write;
+                    return isDynamic ? Vortice.Direct3D11.MapMode.WriteDiscard : Vortice.Direct3D11.MapMode.Write;
                 case MapMode.ReadWrite:
-                    return SharpDX.Direct3D11.MapMode.ReadWrite;
+                    return Vortice.Direct3D11.MapMode.ReadWrite;
                 default:
                     throw Illegal.Value<MapMode>();
             }
         }
 
-        internal static SharpDX.Direct3D.PrimitiveTopology VdToD3D11PrimitiveTopology(PrimitiveTopology primitiveTopology)
+        internal static Vortice.Direct3D.PrimitiveTopology VdToD3D11PrimitiveTopology(PrimitiveTopology primitiveTopology)
         {
             switch (primitiveTopology)
             {
                 case PrimitiveTopology.TriangleList:
-                    return SharpDX.Direct3D.PrimitiveTopology.TriangleList;
+                    return Vortice.Direct3D.PrimitiveTopology.TriangleList;
                 case PrimitiveTopology.TriangleStrip:
-                    return SharpDX.Direct3D.PrimitiveTopology.TriangleStrip;
+                    return Vortice.Direct3D.PrimitiveTopology.TriangleStrip;
                 case PrimitiveTopology.LineList:
-                    return SharpDX.Direct3D.PrimitiveTopology.LineList;
+                    return Vortice.Direct3D.PrimitiveTopology.LineList;
                 case PrimitiveTopology.LineStrip:
-                    return SharpDX.Direct3D.PrimitiveTopology.LineStrip;
+                    return Vortice.Direct3D.PrimitiveTopology.LineStrip;
                 case PrimitiveTopology.PointList:
-                    return SharpDX.Direct3D.PrimitiveTopology.PointList;
+                    return Vortice.Direct3D.PrimitiveTopology.PointList;
                 default:
                     throw Illegal.Value<PrimitiveTopology>();
             }
@@ -545,32 +725,38 @@ namespace Veldrid.D3D11
                     return Format.R32G32B32_SInt;
                 case VertexElementFormat.Int4:
                     return Format.R32G32B32A32_SInt;
+                case VertexElementFormat.Half1:
+                    return Format.R16_Float;
+                case VertexElementFormat.Half2:
+                    return Format.R16G16_Float;
+                case VertexElementFormat.Half4:
+                    return Format.R16G16B16A16_Float;
 
                 default:
                     throw Illegal.Value<VertexElementFormat>();
             }
         }
 
-        internal static Comparison VdToD3D11Comparison(ComparisonKind comparisonKind)
+        internal static ComparisonFunction VdToD3D11ComparisonFunc(ComparisonKind comparisonKind)
         {
             switch (comparisonKind)
             {
                 case ComparisonKind.Never:
-                    return Comparison.Never;
+                    return ComparisonFunction.Never;
                 case ComparisonKind.Less:
-                    return Comparison.Less;
+                    return ComparisonFunction.Less;
                 case ComparisonKind.Equal:
-                    return Comparison.Equal;
+                    return ComparisonFunction.Equal;
                 case ComparisonKind.LessEqual:
-                    return Comparison.LessEqual;
+                    return ComparisonFunction.LessEqual;
                 case ComparisonKind.Greater:
-                    return Comparison.Greater;
+                    return ComparisonFunction.Greater;
                 case ComparisonKind.NotEqual:
-                    return Comparison.NotEqual;
+                    return ComparisonFunction.NotEqual;
                 case ComparisonKind.GreaterEqual:
-                    return Comparison.GreaterEqual;
+                    return ComparisonFunction.GreaterEqual;
                 case ComparisonKind.Always:
-                    return Comparison.Always;
+                    return ComparisonFunction.Always;
                 default:
                     throw Illegal.Value<ComparisonKind>();
             }

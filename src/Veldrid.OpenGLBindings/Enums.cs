@@ -227,6 +227,7 @@ namespace Veldrid.OpenGLBinding
         Texture2DArray = 35866,
         ProxyTexture2DArray = 35867,
         TextureBuffer = 35882,
+        TextureExternalOes = 36197,
         TextureCubeMapArray = 36873,
         ProxyTextureCubeMapArray = 36875,
         Texture2DMultisample = 37120,
@@ -1436,6 +1437,7 @@ namespace Veldrid.OpenGLBinding
         ViewportBoundsRange = 33373,
         LayerProvokingVertex = 33374,
         ViewportIndexProvokingVertex = 33375,
+        MaxLabelLength = 33512,
         MaxCullDistances = 33529,
         MaxCombinedClipAndCullDistances = 33530,
         ContextReleaseBehavior = 33531,
@@ -1653,6 +1655,7 @@ namespace Veldrid.OpenGLBinding
         MaxGeometryImageUniforms = 37069,
         MaxFragmentImageUniforms = 37070,
         MaxCombinedImageUniforms = 37071,
+        ShaderStorageBufferOffsetAlignment = 37087,
         ContextRobustAccess = 37107,
         TextureBinding2DMultisample = 37124,
         TextureBinding2DMultisampleArray = 37125,
@@ -1727,12 +1730,12 @@ namespace Veldrid.OpenGLBinding
         Vendor = 0x1F00,
         Renderer = 0x1F01,
         Version = 0x1F02,
+        ShadingLanguageVersion = 35724,
     }
 
     public enum StringNameIndexed
     {
-        Extensions = 7939,
-        ShadingLanguageVersion = 35724
+        Extensions = 7939
     }
 
     public enum ObjectLabelIdentifier
@@ -2019,5 +2022,36 @@ namespace Veldrid.OpenGLBinding
     {
         RenderbufferWidth = 0x8D42,
         RenderbufferHeight = 0x8D43,
+    }
+
+    public enum ClipControlOrigin
+    {
+        LowerLeft = 0x8CA1,
+        UpperLeft = 0x8CA2,
+    }
+
+    public enum ClipControlDepthRange
+    {
+        NegativeOneToOne = 0x935E,
+        ZeroToOne = 0x935F,
+    }
+
+    public enum FramebufferParameterName
+    {
+        ColorEncoding = 0x8210,
+        ComponentType = 0x8211,
+        RedSize = 0x8212,
+        GreenSize = 0x8213,
+        BlueSize = 0x8214,
+        AlphaSize = 0x8215,
+        DepthSize = 0x8216,
+        StencilSize = 0x8217,
+        ObjectType = 0x8CD0,
+        ObjectName = 0x8CD1,
+        TextureLvel = 0x8CD2,
+        CubeMapFace = 0x8CD3,
+        TextureLayer = 0x8CD4,
+        Layered = 0x8DA7,
+        LayerTargets = 0x8DA8,
     }
 }

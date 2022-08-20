@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using Veldrid.MetalBindings;
 
@@ -7,6 +8,7 @@ namespace Veldrid.MTL
     internal class MTLPipeline : Pipeline
     {
         private bool _disposed;
+        private List<MTLFunction> _specializedFunctions;
 
         public MTLRenderPipelineState RenderPipelineState { get; }
         public MTLComputePipelineState ComputePipelineState { get; }
@@ -27,6 +29,7 @@ namespace Veldrid.MTL
         public override string Name { get; set; }
         public uint StencilReference { get; }
         public RgbaFloat BlendColor { get; }
+        public override bool IsDisposed => _disposed;
 
         public MTLPipeline(ref GraphicsPipelineDescription description, MTLGraphicsDevice gd)
             : base(ref description)
@@ -47,16 +50,33 @@ namespace Veldrid.MTL
             ScissorTestEnabled = description.RasterizerState.ScissorTestEnabled;
 
             MTLRenderPipelineDescriptor mtlDesc = MTLRenderPipelineDescriptor.New();
-            foreach (var shader in description.ShaderSet.Shaders)
+            foreach (Shader shader in description.ShaderSet.Shaders)
             {
-                var mtlShader = Util.AssertSubtype<Shader, MTLShader>(shader);
+                MTLShader mtlShader = Util.AssertSubtype<Shader, MTLShader>(shader);
+                MTLFunction specializedFunction;
+
+                if (mtlShader.HasFunctionConstants)
+                {
+                    // Need to create specialized MTLFunction.
+                    MTLFunctionConstantValues constantValues = CreateConstantValues(description.ShaderSet.Specializations);
+                    specializedFunction = mtlShader.Library.newFunctionWithNameConstantValues(mtlShader.EntryPoint, constantValues);
+                    AddSpecializedFunction(specializedFunction);
+                    ObjectiveCRuntime.release(constantValues.NativePtr);
+
+                    Debug.Assert(specializedFunction.NativePtr != IntPtr.Zero, "Failed to create specialized MTLFunction");
+                }
+                else
+                {
+                    specializedFunction = mtlShader.Function;
+                }
+
                 if (shader.Stage == ShaderStages.Vertex)
                 {
-                    mtlDesc.vertexFunction = mtlShader.Function;
+                    mtlDesc.vertexFunction = specializedFunction;
                 }
                 else if (shader.Stage == ShaderStages.Fragment)
                 {
-                    mtlDesc.fragmentFunction = mtlShader.Function;
+                    mtlDesc.fragmentFunction = specializedFunction;
                 }
             }
 
@@ -89,8 +109,8 @@ namespace Veldrid.MTL
                         ? NonVertexBufferCount + i
                         : i);
                     mtlAttribute.format = MTLFormats.VdToMTLVertexFormat(elementDesc.Format);
-                    mtlAttribute.offset = (UIntPtr)offset;
-                    offset += FormatHelpers.GetSizeInBytes(elementDesc.Format);
+                    mtlAttribute.offset = elementDesc.Offset != 0 ? (UIntPtr)elementDesc.Offset : (UIntPtr)offset;
+                    offset += FormatSizeHelpers.GetSizeInBytes(elementDesc.Format);
                     element += 1;
                 }
             }
@@ -124,6 +144,7 @@ namespace Veldrid.MTL
                 MTLRenderPipelineColorAttachmentDescriptor colorDesc = mtlDesc.colorAttachments[i];
                 colorDesc.pixelFormat = MTLFormats.VdToMTLPixelFormat(outputs.ColorAttachments[i].Format, false);
                 colorDesc.blendingEnabled = attachmentBlendDesc.BlendEnabled;
+                colorDesc.writeMask = MTLFormats.VdToMTLColorWriteMask(attachmentBlendDesc.ColorWriteMask.GetOrDefault());
                 colorDesc.alphaBlendOperation = MTLFormats.VdToMTLBlendOp(attachmentBlendDesc.AlphaFunction);
                 colorDesc.sourceAlphaBlendFactor = MTLFormats.VdToMTLBlendFactor(attachmentBlendDesc.SourceAlphaFactor);
                 colorDesc.destinationAlphaBlendFactor = MTLFormats.VdToMTLBlendFactor(attachmentBlendDesc.DestinationAlphaFactor);
@@ -132,6 +153,8 @@ namespace Veldrid.MTL
                 colorDesc.sourceRGBBlendFactor = MTLFormats.VdToMTLBlendFactor(attachmentBlendDesc.SourceColorFactor);
                 colorDesc.destinationRGBBlendFactor = MTLFormats.VdToMTLBlendFactor(attachmentBlendDesc.DestinationColorFactor);
             }
+
+            mtlDesc.alphaToCoverageEnabled = blendStateDesc.AlphaToCoverageEnabled;
 
             RenderPipelineState = gd.Device.newRenderPipelineStateWithDescriptor(mtlDesc);
             ObjectiveCRuntime.release(mtlDesc.NativePtr);
@@ -198,13 +221,30 @@ namespace Veldrid.MTL
             MTLComputePipelineDescriptor mtlDesc = MTLUtil.AllocInit<MTLComputePipelineDescriptor>(
                 nameof(MTLComputePipelineDescriptor));
             MTLShader mtlShader = Util.AssertSubtype<Shader, MTLShader>(description.ComputeShader);
-            mtlDesc.computeFunction = mtlShader.Function;
+            MTLFunction specializedFunction;
+            if (mtlShader.HasFunctionConstants)
+            {
+                // Need to create specialized MTLFunction.
+                MTLFunctionConstantValues constantValues = CreateConstantValues(description.Specializations);
+                specializedFunction = mtlShader.Library.newFunctionWithNameConstantValues(mtlShader.EntryPoint, constantValues);
+                AddSpecializedFunction(specializedFunction);
+                ObjectiveCRuntime.release(constantValues.NativePtr);
+
+                Debug.Assert(specializedFunction.NativePtr != IntPtr.Zero, "Failed to create specialized MTLFunction");
+            }
+            else
+            {
+                specializedFunction = mtlShader.Function;
+            }
+
+            mtlDesc.computeFunction = specializedFunction;
             MTLPipelineBufferDescriptorArray buffers = mtlDesc.buffers;
             uint bufferIndex = 0;
             foreach (MTLResourceLayout layout in ResourceLayouts)
             {
-                foreach (ResourceKind kind in layout.ResourceKinds)
+                foreach (ResourceLayoutElementDescription rle in layout.Description.Elements)
                 {
+                    ResourceKind kind = rle.Kind;
                     if (kind == ResourceKind.UniformBuffer
                         || kind == ResourceKind.StructuredBufferReadOnly)
                     {
@@ -226,6 +266,27 @@ namespace Veldrid.MTL
             ObjectiveCRuntime.release(mtlDesc.NativePtr);
         }
 
+        private unsafe MTLFunctionConstantValues CreateConstantValues(SpecializationConstant[] specializations)
+        {
+            MTLFunctionConstantValues ret = MTLFunctionConstantValues.New();
+            if (specializations != null)
+            {
+                foreach (SpecializationConstant sc in specializations)
+                {
+                    MTLDataType mtlType = MTLFormats.VdVoMTLShaderConstantType(sc.Type);
+                    ret.setConstantValuetypeatIndex(&sc.Data, mtlType, (UIntPtr)sc.ID);
+                }
+            }
+
+            return ret;
+        }
+
+        private void AddSpecializedFunction(MTLFunction function)
+        {
+            if (_specializedFunctions == null) { _specializedFunctions = new List<MTLFunction>(); }
+            _specializedFunctions.Add(function);
+        }
+
         public override void Dispose()
         {
             if (!_disposed)
@@ -239,6 +300,16 @@ namespace Veldrid.MTL
                     Debug.Assert(ComputePipelineState.NativePtr != IntPtr.Zero);
                     ObjectiveCRuntime.release(ComputePipelineState.NativePtr);
                 }
+
+                if (_specializedFunctions != null)
+                {
+                    foreach (MTLFunction function in _specializedFunctions)
+                    {
+                        ObjectiveCRuntime.release(function.NativePtr);
+                    }
+                    _specializedFunctions.Clear();
+                }
+
                 _disposed = true;
             }
         }

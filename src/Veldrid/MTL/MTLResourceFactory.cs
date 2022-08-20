@@ -41,6 +41,7 @@ namespace Veldrid.MTL
 
         public override ResourceSet CreateResourceSet(ref ResourceSetDescription description)
         {
+            ValidationHelpers.ValidateResourceSet(_gd, ref description);
             return new MTLResourceSet(ref description, _gd);
         }
 
@@ -62,6 +63,11 @@ namespace Veldrid.MTL
         protected override Texture CreateTextureCore(ref TextureDescription description)
         {
             return new MTLTexture(ref description, _gd);
+        }
+
+        protected override Texture CreateTextureCore(ulong nativeTexture, ref TextureDescription description)
+        {
+            return new MTLTexture(nativeTexture, ref description);
         }
 
         protected override TextureView CreateTextureViewCore(ref TextureViewDescription description)

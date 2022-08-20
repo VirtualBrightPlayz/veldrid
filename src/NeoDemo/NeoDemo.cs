@@ -32,10 +32,20 @@ namespace Veldrid.NeoDemo
 
         private readonly string[] _msaaOptions = new string[] { "Off", "2x", "4x", "8x", "16x", "32x" };
         private int _msaaOption = 0;
+        private bool _colorRedMask = true;
+        private bool _colorGreenMask = true;
+        private bool _colorBlueMask = true;
+        private bool _colorAlphaMask = true;
         private TextureSampleCount? _newSampleCount;
+        private ColorWriteMask? _newMask;
 
         private readonly Dictionary<string, ImageSharpTexture> _textures = new Dictionary<string, ImageSharpTexture>();
+        private Sdl2ControllerTracker _controllerTracker;
+        private bool _colorSrgb = true;
         private FullScreenQuad _fsq;
+        public static RenderDoc _renderDoc;
+        private bool _controllerDebugMenu;
+        private bool _showImguiDemo;
 
         public NeoDemo()
         {
@@ -48,24 +58,26 @@ namespace Veldrid.NeoDemo
                 WindowInitialState = WindowState.Normal,
                 WindowTitle = "Veldrid NeoDemo"
             };
-            GraphicsDeviceOptions gdOptions = new GraphicsDeviceOptions(false, null, false, ResourceBindingModel.Improved);
+            GraphicsDeviceOptions gdOptions = new GraphicsDeviceOptions(false, null, false, ResourceBindingModel.Improved, true, true, _colorSrgb);
 #if DEBUG
             gdOptions.Debug = true;
 #endif
-
             VeldridStartup.CreateWindowAndGraphicsDevice(
                 windowCI,
                 gdOptions,
-                //GraphicsBackend.Metal,
-                //GraphicsBackend.Vulkan,
-                GraphicsBackend.OpenGL,
+                 //VeldridStartup.GetPlatformDefaultBackend(),
+                 //GraphicsBackend.Metal,
+                 //GraphicsBackend.Vulkan,
+                //GraphicsBackend.OpenGL,
                 //GraphicsBackend.OpenGLES,
                 out _window,
                 out _gd);
             _window.Resized += () => _windowResized = true;
 
+            Sdl2Native.SDL_Init(SDLInitFlags.GameController);
+            Sdl2ControllerTracker.CreateDefault(out _controllerTracker);
 
-            _scene = new Scene(_window.Width, _window.Height);
+            _scene = new Scene(_gd, _window, _controllerTracker);
 
             _sc.SetCurrentScene(_scene);
 
@@ -82,22 +94,22 @@ namespace Veldrid.NeoDemo
             _sc.Camera.Yaw = -MathF.PI / 2;
             _sc.Camera.Pitch = -MathF.PI / 9;
 
-            ShadowmapDrawIndexeder texDrawIndexeder = new ShadowmapDrawIndexeder(() => _window, () => _sc.NearShadowMapView);
+            ShadowmapDrawer texDrawIndexeder = new ShadowmapDrawer(() => _window, () => _sc.NearShadowMapView);
             _resizeHandled += (w, h) => texDrawIndexeder.OnWindowResized();
             texDrawIndexeder.Position = new Vector2(10, 25);
             _scene.AddRenderable(texDrawIndexeder);
 
-            ShadowmapDrawIndexeder texDrawIndexeder2 = new ShadowmapDrawIndexeder(() => _window, () => _sc.MidShadowMapView);
+            ShadowmapDrawer texDrawIndexeder2 = new ShadowmapDrawer(() => _window, () => _sc.MidShadowMapView);
             _resizeHandled += (w, h) => texDrawIndexeder2.OnWindowResized();
             texDrawIndexeder2.Position = new Vector2(20 + texDrawIndexeder2.Size.X, 25);
             _scene.AddRenderable(texDrawIndexeder2);
 
-            ShadowmapDrawIndexeder texDrawIndexeder3 = new ShadowmapDrawIndexeder(() => _window, () => _sc.FarShadowMapView);
+            ShadowmapDrawer texDrawIndexeder3 = new ShadowmapDrawer(() => _window, () => _sc.FarShadowMapView);
             _resizeHandled += (w, h) => texDrawIndexeder3.OnWindowResized();
             texDrawIndexeder3.Position = new Vector2(30 + (texDrawIndexeder3.Size.X * 2), 25);
             _scene.AddRenderable(texDrawIndexeder3);
 
-            ShadowmapDrawIndexeder reflectionTexDrawer = new ShadowmapDrawIndexeder(() => _window, () => _sc.ReflectionColorView);
+            ShadowmapDrawer reflectionTexDrawer = new ShadowmapDrawer(() => _window, () => _sc.ReflectionColorView);
             _resizeHandled += (w, h) => reflectionTexDrawer.OnWindowResized();
             reflectionTexDrawer.Position = new Vector2(40 + (reflectionTexDrawer.Size.X * 3), 25);
             _scene.AddRenderable(reflectionTexDrawer);
@@ -109,6 +121,7 @@ namespace Veldrid.NeoDemo
             _scene.AddRenderable(_fsq);
 
             CreateAllObjects();
+            ImGui.StyleColorsClassic();
         }
 
         private void AddSponzaAtriumObjects()
@@ -171,7 +184,7 @@ namespace Veldrid.NeoDemo
         {
             if (!_textures.TryGetValue(texturePath, out ImageSharpTexture tex))
             {
-                tex = new ImageSharpTexture(texturePath, mipmap);
+                tex = new ImageSharpTexture(texturePath, mipmap, true);
                 _textures.Add(texturePath, tex);
             }
 
@@ -214,8 +227,9 @@ namespace Veldrid.NeoDemo
                 previousFrameTicks = currentFrameTicks;
 
                 InputSnapshot snapshot = null;
+                Sdl2Events.ProcessEvents();
                 snapshot = _window.PumpEvents();
-                InputTracker.UpdateFrameInput(snapshot);
+                InputTracker.UpdateFrameInput(snapshot, _window);
                 Update((float)deltaSeconds);
                 if (!_window.Exists)
                 {
@@ -241,23 +255,23 @@ namespace Veldrid.NeoDemo
                     if (ImGui.BeginMenu("Graphics Backend"))
                     {
 
-                        if (ImGui.MenuItem("Vulkan", GraphicsDevice.IsBackendSupported(GraphicsBackend.Vulkan)))
+                        if (ImGui.MenuItem("Vulkan", string.Empty, _gd.BackendType == GraphicsBackend.Vulkan, GraphicsDevice.IsBackendSupported(GraphicsBackend.Vulkan)))
                         {
                             ChangeBackend(GraphicsBackend.Vulkan);
                         }
-                        if (ImGui.MenuItem("OpenGL", GraphicsDevice.IsBackendSupported(GraphicsBackend.OpenGL)))
+                        if (ImGui.MenuItem("OpenGL", string.Empty, _gd.BackendType == GraphicsBackend.OpenGL, GraphicsDevice.IsBackendSupported(GraphicsBackend.OpenGL)))
                         {
                             ChangeBackend(GraphicsBackend.OpenGL);
                         }
-                        if (ImGui.MenuItem("OpenGL ES", GraphicsDevice.IsBackendSupported(GraphicsBackend.OpenGLES)))
+                        if (ImGui.MenuItem("OpenGL ES", string.Empty, _gd.BackendType == GraphicsBackend.OpenGLES, GraphicsDevice.IsBackendSupported(GraphicsBackend.OpenGLES)))
                         {
                             ChangeBackend(GraphicsBackend.OpenGLES);
                         }
-                        if (ImGui.MenuItem("Direct3D 11", GraphicsDevice.IsBackendSupported(GraphicsBackend.Direct3D11)))
+                        if (ImGui.MenuItem("Direct3D 11", string.Empty, _gd.BackendType == GraphicsBackend.Direct3D11, GraphicsDevice.IsBackendSupported(GraphicsBackend.Direct3D11)))
                         {
                             ChangeBackend(GraphicsBackend.Direct3D11);
                         }
-                        if (ImGui.MenuItem("Metal", GraphicsDevice.IsBackendSupported(GraphicsBackend.Metal)))
+                        if (ImGui.MenuItem("Metal", string.Empty, _gd.BackendType == GraphicsBackend.Metal, GraphicsDevice.IsBackendSupported(GraphicsBackend.Metal)))
                         {
                             ChangeBackend(GraphicsBackend.Metal);
                         }
@@ -265,13 +279,37 @@ namespace Veldrid.NeoDemo
                     }
                     if (ImGui.BeginMenu("MSAA"))
                     {
-                        if (ImGui.Combo("MSAA", ref _msaaOption, _msaaOptions))
+                        if (ImGui.Combo("MSAA", ref _msaaOption, _msaaOptions, _msaaOptions.Length))
                         {
                             ChangeMsaa(_msaaOption);
                         }
 
                         ImGui.EndMenu();
                     }
+                    if (ImGui.BeginMenu("Color mask"))
+                    {
+                        if (ImGui.Checkbox("Red", ref _colorRedMask)) UpdateColorMask();
+                        if (ImGui.Checkbox("Green", ref _colorGreenMask)) UpdateColorMask();
+                        if (ImGui.Checkbox("Blue", ref _colorBlueMask)) UpdateColorMask();
+                        if (ImGui.Checkbox("Alpha", ref _colorAlphaMask)) UpdateColorMask();
+
+                        ImGui.EndMenu();
+                    }
+                    bool threadedRendering = _scene.ThreadedRendering;
+                    if (ImGui.MenuItem("Render with multiple threads", string.Empty, threadedRendering, true))
+                    {
+                        _scene.ThreadedRendering = !_scene.ThreadedRendering;
+                    }
+                    bool tinted = _fsq.UseMultipleRenderTargets;
+                    if (ImGui.MenuItem("Tinted output", string.Empty, tinted, true))
+                    {
+                        _fsq.UseMultipleRenderTargets = !tinted;
+                    }
+
+                    ImGui.EndMenu();
+                }
+                if (ImGui.BeginMenu("Window"))
+                {
                     bool isFullscreen = _window.WindowState == WindowState.BorderlessFullScreen;
                     if (ImGui.MenuItem("Fullscreen", "F11", isFullscreen, true))
                     {
@@ -281,25 +319,30 @@ namespace Veldrid.NeoDemo
                     {
                         _recreateWindow = !_recreateWindow;
                     }
-                    if (ImGui.IsItemHovered(HoveredFlags.Default))
+                    if (ImGui.IsItemHovered())
                     {
                         ImGui.SetTooltip(
                             "Causes a new OS window to be created whenever the graphics backend is switched. This is much safer, and is the default.");
                     }
-                    bool threadedRendering = _scene.ThreadedRendering;
-                    if (ImGui.MenuItem("Render with multiple threads", string.Empty, threadedRendering, true))
+                    if (ImGui.MenuItem("sRGB Swapchain Format", string.Empty, _colorSrgb, true))
                     {
-                        _scene.ThreadedRendering = !_scene.ThreadedRendering;
-                    }
-                    bool tinted = _fsq.UseTintedTexture;
-                    if (ImGui.MenuItem("Tinted output", string.Empty, tinted, true))
-                    {
-                        _fsq.UseTintedTexture = !tinted;
+                        _colorSrgb = !_colorSrgb;
+                        ChangeBackend(_gd.BackendType);
                     }
                     bool vsync = _gd.SyncToVerticalBlank;
                     if (ImGui.MenuItem("VSync", string.Empty, vsync, true))
                     {
                         _gd.SyncToVerticalBlank = !_gd.SyncToVerticalBlank;
+                    }
+                    bool resizable = _window.Resizable;
+                    if (ImGui.MenuItem("Resizable Window", string.Empty, resizable))
+                    {
+                        _window.Resizable = !_window.Resizable;
+                    }
+                    bool bordered = _window.BorderVisible;
+                    if (ImGui.MenuItem("Visible Window Border", string.Empty, bordered))
+                    {
+                        _window.BorderVisible = !_window.BorderVisible;
                     }
 
                     ImGui.EndMenu();
@@ -338,8 +381,125 @@ namespace Veldrid.NeoDemo
                     {
                         RefreshDeviceObjects(100);
                     }
+                    if (_controllerTracker != null)
+                    {
+                        if (ImGui.MenuItem("Controller State"))
+                        {
+                            _controllerDebugMenu = true;
+                        }
+                    }
+                    else
+                    {
+                        if (ImGui.MenuItem("Connect to Controller"))
+                        {
+                            Sdl2ControllerTracker.CreateDefault(out _controllerTracker);
+                            _scene.Camera.Controller = _controllerTracker;
+                        }
+                    }
+                    if (ImGui.MenuItem("Show ImGui Demo", string.Empty, _showImguiDemo, true))
+                    {
+                        _showImguiDemo = !_showImguiDemo;
+                    }
 
                     ImGui.EndMenu();
+                }
+
+                if (ImGui.BeginMenu("RenderDoc"))
+                {
+                    if (_renderDoc == null)
+                    {
+                        if (ImGui.MenuItem("Load"))
+                        {
+                            if (RenderDoc.Load(out _renderDoc))
+                            {
+                                ChangeBackend(_gd.BackendType, forceRecreateWindow: true);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (ImGui.MenuItem("Trigger Capture"))
+                        {
+                            _renderDoc.TriggerCapture();
+                        }
+                        if (ImGui.BeginMenu("Options"))
+                        {
+                            bool allowVsync = _renderDoc.AllowVSync;
+                            if (ImGui.Checkbox("Allow VSync", ref allowVsync))
+                            {
+                                _renderDoc.AllowVSync = allowVsync;
+                            }
+                            bool validation = _renderDoc.APIValidation;
+                            if (ImGui.Checkbox("API Validation", ref validation))
+                            {
+                                _renderDoc.APIValidation = validation;
+                            }
+                            int delayForDebugger = (int)_renderDoc.DelayForDebugger;
+                            if (ImGui.InputInt("Debugger Delay", ref delayForDebugger))
+                            {
+                                delayForDebugger = Math.Clamp(delayForDebugger, 0, int.MaxValue);
+                                _renderDoc.DelayForDebugger = (uint)delayForDebugger;
+                            }
+                            bool verifyBufferAccess = _renderDoc.VerifyBufferAccess;
+                            if (ImGui.Checkbox("Verify Buffer Access", ref verifyBufferAccess))
+                            {
+                                _renderDoc.VerifyBufferAccess = verifyBufferAccess;
+                            }
+                            bool overlayEnabled = _renderDoc.OverlayEnabled;
+                            if (ImGui.Checkbox("Overlay Visible", ref overlayEnabled))
+                            {
+                                _renderDoc.OverlayEnabled = overlayEnabled;
+                            }
+                            bool overlayFrameRate = _renderDoc.OverlayFrameRate;
+                            if (ImGui.Checkbox("Overlay Frame Rate", ref overlayFrameRate))
+                            {
+                                _renderDoc.OverlayFrameRate = overlayFrameRate;
+                            }
+                            bool overlayFrameNumber = _renderDoc.OverlayFrameNumber;
+                            if (ImGui.Checkbox("Overlay Frame Number", ref overlayFrameNumber))
+                            {
+                                _renderDoc.OverlayFrameNumber = overlayFrameNumber;
+                            }
+                            bool overlayCaptureList = _renderDoc.OverlayCaptureList;
+                            if (ImGui.Checkbox("Overlay Capture List", ref overlayCaptureList))
+                            {
+                                _renderDoc.OverlayCaptureList = overlayCaptureList;
+                            }
+                            ImGui.EndMenu();
+                        }
+                        if (ImGui.MenuItem("Launch Replay UI"))
+                        {
+                            _renderDoc.LaunchReplayUI();
+                        }
+                    }
+                    ImGui.EndMenu();
+                }
+
+                if (_controllerDebugMenu)
+                {
+                    if (ImGui.Begin("Controller State", ref _controllerDebugMenu, ImGuiWindowFlags.NoCollapse))
+                    {
+
+                        if (_controllerTracker != null)
+                        {
+                            ImGui.Columns(2);
+                            ImGui.Text($"Name: {_controllerTracker.ControllerName}");
+                            foreach (SDL_GameControllerAxis axis in (SDL_GameControllerAxis[])Enum.GetValues(typeof(SDL_GameControllerAxis)))
+                            {
+                                ImGui.Text($"{axis}: {_controllerTracker.GetAxis(axis)}");
+                            }
+                            ImGui.NextColumn();
+                            foreach (SDL_GameControllerButton button in (SDL_GameControllerButton[])Enum.GetValues(typeof(SDL_GameControllerButton)))
+                            {
+                                ImGui.Text($"{button}: {_controllerTracker.IsPressed(button)}");
+                            }
+                        }
+                        else
+                        {
+                            ImGui.Text("No controller detected.");
+                        }
+                    }
+                    ImGui.End();
                 }
 
                 ImGui.Text(_fta.CurrentAverageFramesPerSecond.ToString("000.0 fps / ") + _fta.CurrentAverageFrameTimeMilliseconds.ToString("#00.00 ms"));
@@ -352,7 +512,29 @@ namespace Veldrid.NeoDemo
                 ToggleFullscreenState();
             }
 
-            _window.Title = _gd.BackendType.ToString();
+            if (InputTracker.GetKeyDown(Key.Keypad6))
+            {
+                _window.X += 10;
+            }
+            if (InputTracker.GetKeyDown(Key.Keypad4))
+            {
+                _window.X -= 10;
+            }
+            if (InputTracker.GetKeyDown(Key.Keypad8))
+            {
+                _window.Y += 10;
+            }
+            if (InputTracker.GetKeyDown(Key.Keypad2))
+            {
+                _window.Y -= 10;
+            }
+
+            _window.Title = $"NeoDemo ({_gd.DeviceName}, {_gd.BackendType.ToString()})";
+
+            if (_showImguiDemo)
+            {
+                ImGui.ShowDemoWindow(ref _showImguiDemo);
+            }
         }
 
         private void ChangeMsaa(int msaaOption)
@@ -361,13 +543,28 @@ namespace Veldrid.NeoDemo
             _newSampleCount = sampleCount;
         }
 
+        private void UpdateColorMask()
+        {
+            ColorWriteMask mask = ColorWriteMask.None;
+
+            if (_colorRedMask) mask |= ColorWriteMask.Red;
+            if (_colorGreenMask) mask |= ColorWriteMask.Green;
+            if (_colorBlueMask) mask |= ColorWriteMask.Blue;
+            if (_colorAlphaMask) mask |= ColorWriteMask.Alpha;
+
+            _newMask = mask;
+        }
+
         private void RefreshDeviceObjects(int numTimes)
         {
+            Stopwatch sw = Stopwatch.StartNew();
             for (int i = 0; i < numTimes; i++)
             {
                 DestroyAllObjects();
                 CreateAllObjects();
             }
+            sw.Stop();
+            Console.WriteLine($"Refreshing resources {numTimes} times took {sw.Elapsed.TotalSeconds} seconds.");
         }
 
         private void DrawIndexedMaterialMenu(MaterialPropsAndBuffer propsAndBuffer)
@@ -375,9 +572,9 @@ namespace Veldrid.NeoDemo
             MaterialProperties props = propsAndBuffer.Properties;
             float intensity = props.SpecularIntensity.X;
             float reflectivity = props.Reflectivity;
-            if (ImGui.SliderFloat("Intensity", ref intensity, 0f, 10f, intensity.ToString(), 1f)
-                | ImGui.SliderFloat("Power", ref props.SpecularPower, 0f, 1000f, props.SpecularPower.ToString(), 1f)
-                | ImGui.SliderFloat("Reflectivity", ref props.Reflectivity, 0f, 1f, props.Reflectivity.ToString(), 1f))
+            if (ImGui.SliderFloat("Intensity", ref intensity, 0f, 10f, intensity.ToString())
+                | ImGui.SliderFloat("Power", ref props.SpecularPower, 0f, 1000f, props.SpecularPower.ToString())
+                | ImGui.SliderFloat("Reflectivity", ref props.Reflectivity, 0f, 1f, props.Reflectivity.ToString()))
             {
                 props.SpecularIntensity = new Vector3(intensity);
                 propsAndBuffer.Properties = props;
@@ -419,6 +616,14 @@ namespace Veldrid.NeoDemo
                 CreateAllObjects();
             }
 
+            if (_newMask != null)
+            {
+                _sc.MainSceneMask = _newMask.Value;
+                _newMask = null;
+                DestroyAllObjects();
+                CreateAllObjects();
+            }
+
             _frameCommands.Begin();
 
             CommonMaterials.FlushAll(_frameCommands);
@@ -427,13 +632,14 @@ namespace Veldrid.NeoDemo
             _gd.SwapBuffers();
         }
 
-        private void ChangeBackend(GraphicsBackend backend)
+        private void ChangeBackend(GraphicsBackend backend) => ChangeBackend(backend, false);
+        private void ChangeBackend(GraphicsBackend backend, bool forceRecreateWindow)
         {
             DestroyAllObjects();
             bool syncToVBlank = _gd.SyncToVerticalBlank;
             _gd.Dispose();
 
-            if (_recreateWindow)
+            if (_recreateWindow || forceRecreateWindow)
             {
 
                 WindowCreateInfo windowCI = new WindowCreateInfo
@@ -452,11 +658,13 @@ namespace Veldrid.NeoDemo
                 _window.Resized += () => _windowResized = true;
             }
 
-            GraphicsDeviceOptions gdOptions = new GraphicsDeviceOptions(false, null, syncToVBlank, ResourceBindingModel.Improved);
+            GraphicsDeviceOptions gdOptions = new GraphicsDeviceOptions(false, null, syncToVBlank, ResourceBindingModel.Improved, true, true, _colorSrgb);
 #if DEBUG
             gdOptions.Debug = true;
 #endif
             _gd = VeldridStartup.CreateGraphicsDevice(_window, gdOptions, backend);
+
+            _scene.Camera.UpdateBackend(_gd, _window);
 
             CreateAllObjects();
         }

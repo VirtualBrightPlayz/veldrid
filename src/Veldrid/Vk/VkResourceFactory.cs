@@ -43,6 +43,7 @@ namespace Veldrid.Vk
 
         public override ResourceSet CreateResourceSet(ref ResourceSetDescription description)
         {
+            ValidationHelpers.ValidateResourceSet(_gd, ref description);
             return new VkResourceSet(_gd, ref description);
         }
 
@@ -59,6 +60,18 @@ namespace Veldrid.Vk
         protected override Texture CreateTextureCore(ref TextureDescription description)
         {
             return new VkTexture(_gd, ref description);
+        }
+
+        protected override Texture CreateTextureCore(ulong nativeTexture, ref TextureDescription description)
+        {
+            return new VkTexture(
+                _gd,
+                description.Width, description.Height,
+                description.MipLevels, description.ArrayLayers,
+                VkFormats.VdToVkPixelFormat(description.Format, (description.Usage & TextureUsage.DepthStencil) != 0),
+                description.Usage,
+                description.SampleCount,
+                nativeTexture);
         }
 
         protected override TextureView CreateTextureViewCore(ref TextureViewDescription description)

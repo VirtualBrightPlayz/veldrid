@@ -12,19 +12,23 @@ namespace Veldrid.MTL
 
         public override string Name { get; set; }
 
+        public override bool IsDisposed => _disposed;
+
         public MTLTextureView(ref TextureViewDescription description, MTLGraphicsDevice gd)
             : base(ref description)
         {
             MTLTexture targetMTLTexture = Util.AssertSubtype<Texture, MTLTexture>(description.Target);
             if (BaseMipLevel != 0 || MipLevels != Target.MipLevels
-                || BaseArrayLayer != 0 || ArrayLayers != Target.ArrayLayers)
+                || BaseArrayLayer != 0 || ArrayLayers != Target.ArrayLayers
+                || Format != Target.Format)
             {
                 _hasTextureView = true;
+                var effectiveArrayLayers = Target.Usage.HasFlag(TextureUsage.Cubemap) ? ArrayLayers * 6 : ArrayLayers;
                 TargetDeviceTexture = targetMTLTexture.DeviceTexture.newTextureView(
-                    targetMTLTexture.MTLPixelFormat,
+                    MTLFormats.VdToMTLPixelFormat(Format, (description.Target.Usage & TextureUsage.DepthStencil) != 0),
                     targetMTLTexture.MTLTextureType,
                     new NSRange(BaseMipLevel, MipLevels),
-                    new NSRange(BaseArrayLayer, ArrayLayers));
+                    new NSRange(BaseArrayLayer, effectiveArrayLayers));
             }
             else
             {

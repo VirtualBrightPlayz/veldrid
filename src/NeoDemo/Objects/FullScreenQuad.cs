@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Numerics;
 using Veldrid.Utilities;
 
 namespace Veldrid.NeoDemo.Objects
@@ -9,7 +10,8 @@ namespace Veldrid.NeoDemo.Objects
         private Pipeline _pipeline;
         private DeviceBuffer _ib;
         private DeviceBuffer _vb;
-        public bool UseTintedTexture { get; set; }
+
+        public bool UseMultipleRenderTargets { get; set; }
 
         public override void CreateDeviceObjects(GraphicsDevice gd, CommandList cl, SceneContext sc)
         {
@@ -19,6 +21,8 @@ namespace Veldrid.NeoDemo.Objects
             ResourceLayout resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            (Shader vs, Shader fs) = StaticResourceCache.GetShaders(gd, gd.ResourceFactory, "FullScreenQuad");
 
             GraphicsPipelineDescription pd = new GraphicsPipelineDescription(
                 new BlendStateDescription(
@@ -31,20 +35,19 @@ namespace Veldrid.NeoDemo.Objects
                     new[]
                     {
                         new VertexLayoutDescription(
-                            new VertexElementDescription("Position", VertexElementSemantic.Position, VertexElementFormat.Float2),
+                            new VertexElementDescription("Position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2),
                             new VertexElementDescription("TexCoords", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2))
                     },
-                    new[]
-                    {
-                        ShaderHelper.LoadShader(gd, factory, "FullScreenQuad", ShaderStages.Vertex, "VS"),
-                        ShaderHelper.LoadShader(gd, factory, "FullScreenQuad", ShaderStages.Fragment, "FS"),
-                    }),
+                    new[] { vs, fs },
+                    ShaderHelper.GetSpecializations(gd)),
                 new ResourceLayout[] { resourceLayout },
                 gd.SwapchainFramebuffer.OutputDescription);
             _pipeline = factory.CreateGraphicsPipeline(ref pd);
 
-            _vb = factory.CreateBuffer(new BufferDescription(s_quadVerts.SizeInBytes() * sizeof(float), BufferUsage.VertexBuffer));
-            cl.UpdateBuffer(_vb, 0, s_quadVerts);
+            float[] verts = Util.GetFullScreenQuadVerts(gd);
+
+            _vb = factory.CreateBuffer(new BufferDescription(verts.SizeInBytes() * sizeof(float), BufferUsage.VertexBuffer));
+            cl.UpdateBuffer(_vb, 0, verts);
 
             _ib = factory.CreateBuffer(
                 new BufferDescription(s_quadIndices.SizeInBytes(), BufferUsage.IndexBuffer));
@@ -64,7 +67,7 @@ namespace Veldrid.NeoDemo.Objects
         public override void Render(GraphicsDevice gd, CommandList cl, SceneContext sc, RenderPasses renderPass)
         {
             cl.SetPipeline(_pipeline);
-            cl.SetGraphicsResourceSet(0, UseTintedTexture ? sc.DuplicatorTargetSet1 : sc.DuplicatorTargetSet0);
+            cl.SetGraphicsResourceSet(0, UseMultipleRenderTargets ? sc.DuplicatorTargetSet1 : sc.DuplicatorTargetSet0);
             cl.SetVertexBuffer(0, _vb);
             cl.SetIndexBuffer(_ib, IndexFormat.UInt16);
             cl.DrawIndexed(6, 1, 0, 0, 0);
@@ -75,14 +78,6 @@ namespace Veldrid.NeoDemo.Objects
         public override void UpdatePerFrameResources(GraphicsDevice gd, CommandList cl, SceneContext sc)
         {
         }
-
-        private static float[] s_quadVerts = new float[]
-        {
-            -1, 1, 0, 0,
-            1, 1, 1, 0,
-            1, -1, 1, 1,
-            -1, -1, 0, 1
-        };
 
         private static ushort[] s_quadIndices = new ushort[] { 0, 1, 2, 0, 2, 3 };
     }

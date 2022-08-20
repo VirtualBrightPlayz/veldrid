@@ -46,12 +46,25 @@ namespace Veldrid.Sdl2
         public IntPtr Sdl2Window;
     }
 
+    public struct WaylandWindowInfo
+    {
+        public IntPtr display;
+        public IntPtr surface;
+        public IntPtr shellSurface;
+    }
+
     public struct CocoaWindowInfo
     {
         /// <summary>
         /// The NSWindow* Cocoa window.
         /// </summary>
         public IntPtr Window;
+    }
+
+    public struct AndroidWindowInfo
+    {
+        public IntPtr window;
+        public IntPtr surface;
     }
 
     public enum SysWMType

@@ -15,6 +15,10 @@ namespace Veldrid.Vk
 
         public new VkTexture Target => (VkTexture)base.Target;
 
+        public ResourceRefCount RefCount { get; }
+
+        public override bool IsDisposed => _destroyed;
+
         public VkTextureView(VkGraphicsDevice gd, ref TextureViewDescription description)
             : base(ref description)
         {
@@ -22,7 +26,7 @@ namespace Veldrid.Vk
             VkImageViewCreateInfo imageViewCI = VkImageViewCreateInfo.New();
             VkTexture tex = Util.AssertSubtype<Texture, VkTexture>(description.Target);
             imageViewCI.image = tex.OptimalDeviceImage;
-            imageViewCI.format = tex.VkFormat;
+            imageViewCI.format = VkFormats.VdToVkPixelFormat(Format, (Target.Usage & TextureUsage.DepthStencil) != 0);
 
             VkImageAspectFlags aspectFlags;
             if ((description.Target.Usage & TextureUsage.DepthStencil) == TextureUsage.DepthStencil)
@@ -46,16 +50,28 @@ namespace Veldrid.Vk
                 imageViewCI.viewType = description.ArrayLayers == 1 ? VkImageViewType.ImageCube : VkImageViewType.ImageCubeArray;
                 imageViewCI.subresourceRange.layerCount *= 6;
             }
-            else if (tex.Depth == 1)
-            {
-                imageViewCI.viewType = description.ArrayLayers == 1 ? VkImageViewType.Image2D : VkImageViewType.Image2DArray;
-            }
             else
             {
-                imageViewCI.viewType = VkImageViewType.Image3D;
+                switch (tex.Type)
+                {
+                    case TextureType.Texture1D:
+                        imageViewCI.viewType = description.ArrayLayers == 1
+                            ? VkImageViewType.Image1D
+                            : VkImageViewType.Image1DArray;
+                        break;
+                    case TextureType.Texture2D:
+                        imageViewCI.viewType = description.ArrayLayers == 1
+                            ? VkImageViewType.Image2D
+                            : VkImageViewType.Image2DArray;
+                        break;
+                    case TextureType.Texture3D:
+                        imageViewCI.viewType = VkImageViewType.Image3D;
+                        break;
+                }
             }
 
             vkCreateImageView(_gd.Device, ref imageViewCI, null, out _imageView);
+            RefCount = new ResourceRefCount(DisposeCore);
         }
 
         public override string Name
@@ -69,6 +85,11 @@ namespace Veldrid.Vk
         }
 
         public override void Dispose()
+        {
+            RefCount.Decrement();
+        }
+
+        private void DisposeCore()
         {
             if (!_destroyed)
             {

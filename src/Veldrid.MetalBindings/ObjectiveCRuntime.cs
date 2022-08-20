@@ -49,6 +49,8 @@ namespace Veldrid.MetalBindings
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
         public static extern void objc_msgSend(IntPtr receiver, Selector selector, MTLScissorRect a);
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
+        public static extern void objc_msgSend(IntPtr receiver, Selector selector, void* a, uint b, UIntPtr c);
+        [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
         public static extern void objc_msgSend(IntPtr receiver, Selector selector, void* a, UIntPtr b);
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
         public static extern void objc_msgSend(IntPtr receiver, Selector selector, MTLPrimitiveType a, UIntPtr b, MTLIndexType c, IntPtr d, UIntPtr e, UIntPtr f);
@@ -129,6 +131,20 @@ namespace Veldrid.MetalBindings
             UIntPtr i);
 
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
+        public static extern void objc_msgSend(
+            IntPtr receiver,
+            Selector selector,
+            MTLTexture sourceTexture,
+            UIntPtr sourceSlice,
+            UIntPtr sourceLevel,
+            MTLOrigin sourceOrigin,
+            MTLSize sourceSize,
+            MTLTexture destinationTexture,
+            UIntPtr destinationSlice,
+            UIntPtr destinationLevel,
+            MTLOrigin destinationOrigin);
+
+        [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
         public static extern byte* bytePtr_objc_msgSend(IntPtr receiver, Selector selector);
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
         public static extern CGSize CGSize_objc_msgSend(IntPtr receiver, Selector selector);
@@ -150,6 +166,9 @@ namespace Veldrid.MetalBindings
         public static extern uint uint_objc_msgSend(IntPtr receiver, Selector selector);
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
         public static extern float float_objc_msgSend(IntPtr receiver, Selector selector);
+        [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
+
+        public static extern CGFloat CGFloat_objc_msgSend(IntPtr receiver, Selector selector);
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]
         public static extern double double_objc_msgSend(IntPtr receiver, Selector selector);
         [DllImport(ObjCLibrary, EntryPoint = "objc_msgSend")]

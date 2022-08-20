@@ -1,4 +1,8 @@
 ﻿using System;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using System.Diagnostics;
 
 namespace Veldrid.ImageSharp
 {
@@ -27,6 +31,33 @@ namespace Veldrid.ImageSharp
             }
 
             return Math.Max(1, ret);
+        }
+
+        internal static Image<Rgba32>[] GenerateMipmaps(Image<Rgba32> baseImage) 
+        {
+            int mipLevelCount = MipmapHelper.ComputeMipLevels(baseImage.Width, baseImage.Height);
+            Image<Rgba32>[] mipLevels = new Image<Rgba32>[mipLevelCount];
+            mipLevels[0] = baseImage;
+            int i = 1;
+
+            int currentWidth = baseImage.Width;
+            int currentHeight = baseImage.Height;
+            while (currentWidth != 1 || currentHeight != 1)
+            {
+                int newWidth = Math.Max(1, currentWidth / 2);
+                int newHeight = Math.Max(1, currentHeight / 2);
+                Image<Rgba32> newImage = baseImage.Clone(context => context.Resize(newWidth, newHeight, KnownResamplers.Lanczos3));
+                Debug.Assert(i < mipLevelCount);
+                mipLevels[i] = newImage;
+
+                i++;
+                currentWidth = newWidth;
+                currentHeight = newHeight;
+            }
+
+            Debug.Assert(i == mipLevelCount);
+
+            return mipLevels;
         }
     }
 }

@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using Veldrid.OpenGLBinding;
-using static Veldrid.OpenGLBinding.OpenGLNative;
 using static Veldrid.OpenGL.OpenGLUtil;
+using static Veldrid.OpenGLBinding.OpenGLNative;
 
 namespace Veldrid.OpenGL
 {
@@ -10,7 +10,9 @@ namespace Veldrid.OpenGL
         private readonly OpenGLGraphicsDevice _gd;
         private bool _needsTextureView;
         private uint _textureView;
+        private bool _disposeRequested;
         private bool _disposed;
+        public override bool IsDisposed => _disposeRequested;
 
         private string _name;
         private bool _nameChanged;
@@ -45,27 +47,28 @@ namespace Veldrid.OpenGL
             Target = Util.AssertSubtype<Texture, OpenGLTexture>(description.Target);
 
             if (BaseMipLevel != 0 || MipLevels != Target.MipLevels
-                || BaseArrayLayer != 0 || ArrayLayers != Target.ArrayLayers)
+                || BaseArrayLayer != 0 || ArrayLayers != Target.ArrayLayers
+                || Format != Target.Format)
             {
                 if (_gd.BackendType == GraphicsBackend.OpenGL)
                 {
                     if (!_gd.Extensions.ARB_TextureView)
                     {
                         throw new VeldridException(
-                            "TextureView objects covering a subset of a Texture's dimensions require OpenGL 4.3, or ARB_texture_view.");
+                            "TextureView objects covering a subset of a Texture's dimensions or using a different PixelFormat " +
+                            "require OpenGL 4.3, or ARB_texture_view.");
                     }
                 }
                 else
                 {
-                    throw new VeldridException(
-                        "TextureView objects covering a subset of a Texture's dimensions are not supported on OpenGL ES.");
+                    if (!_gd.Extensions.ARB_TextureView)
+                    {
+                        throw new VeldridException(
+                            "TextureView objects covering a subset of a Texture's dimensions or using a different PixelFormat are " +
+                            "not supported on OpenGL ES.");
+                    }
                 }
                 _needsTextureView = true;
-            }
-
-            if (!gd.MultiThreaded)
-            {
-                EnsureResourcesCreated();
             }
         }
 
@@ -168,6 +171,11 @@ namespace Veldrid.OpenGL
                 case PixelFormat.BC1_Rgba_UNorm:
                 case PixelFormat.BC2_UNorm:
                 case PixelFormat.BC3_UNorm:
+                case PixelFormat.BC4_UNorm:
+                case PixelFormat.BC4_SNorm:
+                case PixelFormat.BC5_UNorm:
+                case PixelFormat.BC5_SNorm:
+                case PixelFormat.BC7_UNorm:
                 default:
                     throw Illegal.Value<PixelFormat>();
             }
@@ -202,7 +210,23 @@ namespace Veldrid.OpenGL
             CheckLastError();
 
             TextureTarget originalTarget = Target.TextureTarget;
-            if (originalTarget == TextureTarget.Texture2D)
+            var effectiveArrayLayers = ArrayLayers;
+            if (originalTarget == TextureTarget.Texture1D)
+            {
+                TextureTarget = TextureTarget.Texture1D;
+            }
+            else if (originalTarget == TextureTarget.Texture1DArray)
+            {
+                if (ArrayLayers > 1)
+                {
+                    TextureTarget = TextureTarget.Texture1DArray;
+                }
+                else
+                {
+                    TextureTarget = TextureTarget.Texture1D;
+                }
+            }
+            else if (originalTarget == TextureTarget.Texture2D)
             {
                 TextureTarget = TextureTarget.Texture2D;
             }
@@ -236,13 +260,26 @@ namespace Veldrid.OpenGL
             {
                 TextureTarget = TextureTarget.Texture3D;
             }
+            else if (originalTarget == TextureTarget.TextureCubeMap)
+            {
+                if (ArrayLayers > 1)
+                {
+                    TextureTarget = TextureTarget.TextureCubeMap;
+                    effectiveArrayLayers *= 6;
+                }
+                else
+                {
+                    TextureTarget = TextureTarget.TextureCubeMapArray;
+                    effectiveArrayLayers *= 6;
+                }
+            }
             else
             {
                 throw new VeldridException("The given TextureView parameters are not supported with the OpenGL backend.");
             }
 
             PixelInternalFormat internalFormat = (PixelInternalFormat)OpenGLFormats.VdToGLSizedInternalFormat(
-                Target.Format,
+                Format,
                 (Target.Usage & TextureUsage.DepthStencil) == TextureUsage.DepthStencil);
             Debug.Assert(Target.Created);
             glTextureView(
@@ -253,13 +290,17 @@ namespace Veldrid.OpenGL
                 BaseMipLevel,
                 MipLevels,
                 BaseArrayLayer,
-                ArrayLayers);
+                effectiveArrayLayers);
             CheckLastError();
         }
 
         public override void Dispose()
         {
-            _gd.EnqueueDisposal(this);
+            if (!_disposeRequested)
+            {
+                _disposeRequested = true;
+                _gd.EnqueueDisposal(this);
+            }
         }
 
         public void DestroyGLResources()

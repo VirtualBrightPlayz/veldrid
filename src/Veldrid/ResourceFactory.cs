@@ -1,3 +1,5 @@
+using System;
+
 namespace Veldrid
 {
     /// <summary>
@@ -5,6 +7,8 @@ namespace Veldrid
     /// </summary>
     public abstract class ResourceFactory
     {
+        /// <summary></summary>
+        /// <param name="features"></param>
         protected ResourceFactory(GraphicsDeviceFeatures features)
         {
             Features = features;
@@ -59,10 +63,41 @@ namespace Veldrid
                     }
                 }
             }
+            foreach (VertexLayoutDescription layoutDesc in description.ShaderSet.VertexLayouts)
+            {
+                bool hasExplicitLayout = false;
+                uint minOffset = 0;
+                foreach (VertexElementDescription elementDesc in layoutDesc.Elements)
+                {
+                    if (hasExplicitLayout && elementDesc.Offset == 0)
+                    {
+                        throw new VeldridException(
+                            $"If any vertex element has an explicit offset, then all elements must have an explicit offset.");
+                    }
+
+                    if (elementDesc.Offset != 0 && elementDesc.Offset < minOffset)
+                    {
+                        throw new VeldridException(
+                            $"Vertex element \"{elementDesc.Name}\" has an explicit offset which overlaps with the previous element.");
+                    }
+
+                    minOffset = elementDesc.Offset + FormatSizeHelpers.GetSizeInBytes(elementDesc.Format);
+                    hasExplicitLayout |= elementDesc.Offset != 0;
+                }
+
+                if (minOffset > layoutDesc.Stride)
+                {
+                    throw new VeldridException(
+                        $"The vertex layout's stride ({layoutDesc.Stride}) is less than the full size of the vertex ({minOffset})");
+                }
+            }
 #endif
             return CreateGraphicsPipelineCore(ref description);
         }
 
+        /// <summary></summary>
+        /// <param name="description"></param>
+        /// <returns></returns>
         protected abstract Pipeline CreateGraphicsPipelineCore(ref GraphicsPipelineDescription description);
 
         /// <summary>
@@ -138,6 +173,52 @@ namespace Veldrid
             return CreateTextureCore(ref description);
         }
 
+        /// <summary>
+        /// Creates a new <see cref="Texture"/> from an existing native texture.
+        /// </summary>
+        /// <param name="nativeTexture">A backend-specific handle identifying an existing native texture. See remarks.</param>
+        /// <param name="description">The properties of the existing Texture.</param>
+        /// <returns>A new <see cref="Texture"/> wrapping the existing native texture.</returns>
+        /// <remarks>
+        /// The nativeTexture parameter is backend-specific, and the type of data passed in depends on which graphics API is
+        /// being used.
+        /// When using the Vulkan backend, nativeTexture must be a valid VkImage handle.
+        /// When using the Metal backend, nativeTexture must be a valid MTLTexture pointer.
+        /// When using the D3D11 backend, nativeTexture must be a valid pointer to an ID3D11Texture1D, ID3D11Texture2D, or
+        /// ID3D11Texture3D.
+        /// When using the OpenGL backend, nativeTexture must be a valid OpenGL texture name.
+        /// The properties of the Texture will be determined from the <see cref="TextureDescription"/> passed in. These
+        /// properties must match the true properties of the existing native texture.
+        /// </remarks>
+        public Texture CreateTexture(ulong nativeTexture, TextureDescription description)
+            => CreateTextureCore(nativeTexture, ref description);
+
+        /// <summary>
+        /// Creates a new <see cref="Texture"/> from an existing native texture.
+        /// </summary>
+        /// <param name="nativeTexture">A backend-specific handle identifying an existing native texture. See remarks.</param>
+        /// <param name="description">The properties of the existing Texture.</param>
+        /// <returns>A new <see cref="Texture"/> wrapping the existing native texture.</returns>
+        /// <remarks>
+        /// The nativeTexture parameter is backend-specific, and the type of data passed in depends on which graphics API is
+        /// being used.
+        /// When using the Vulkan backend, nativeTexture must be a valid VkImage handle.
+        /// When using the Metal backend, nativeTexture must be a valid MTLTexture pointer.
+        /// When using the D3D11 backend, nativeTexture must be a valid pointer to an ID3D11Texture1D, ID3D11Texture2D, or
+        /// ID3D11Texture3D.
+        /// When using the OpenGL backend, nativeTexture must be a valid OpenGL texture name.
+        /// The properties of the Texture will be determined from the <see cref="TextureDescription"/> passed in. These
+        /// properties must match the true properties of the existing native texture.
+        /// </remarks>
+        public Texture CreateTexture(ulong nativeTexture, ref TextureDescription description)
+            => CreateTextureCore(nativeTexture, ref description);
+
+        /// <summary></summary>
+        /// <param name="nativeTexture"></param>
+        /// <param name="description"></param>
+        /// <returns></returns>
+        protected abstract Texture CreateTextureCore(ulong nativeTexture, ref TextureDescription description);
+
         // TODO: private protected
         /// <summary>
         /// </summary>
@@ -178,6 +259,22 @@ namespace Veldrid
                 throw new VeldridException(
                     "To create a TextureView, the target texture must have either Sampled or Storage usage flags.");
             }
+            if (!Features.SubsetTextureView &&
+                (description.BaseMipLevel != 0 || description.MipLevels != description.Target.MipLevels
+                || description.BaseArrayLayer != 0 || description.ArrayLayers != description.Target.ArrayLayers))
+            {
+                throw new VeldridException("GraphicsDevice does not support subset TextureViews.");
+            }
+            if (description.Format != null && description.Format != description.Target.Format)
+            {
+                if (!FormatHelpers.IsFormatViewCompatible(description.Format.Value, description.Target.Format))
+                {
+                    throw new VeldridException(
+                        $"Cannot create a TextureView with format {description.Format.Value} targeting a Texture with format " +
+                        $"{description.Target.Format}. A TextureView's format must have the same size and number of " +
+                        $"components as the underlying Texture's format, or the same format.");
+                }
+            }
 #endif
 
             return CreateTextureViewCore(ref description);
@@ -208,6 +305,11 @@ namespace Veldrid
             if ((usage & BufferUsage.StructuredBufferReadOnly) == BufferUsage.StructuredBufferReadOnly
                 || (usage & BufferUsage.StructuredBufferReadWrite) == BufferUsage.StructuredBufferReadWrite)
             {
+                if (!Features.StructuredBuffer)
+                {
+                    throw new VeldridException("GraphicsDevice does not support structured buffers.");
+                }
+
                 if (description.StructureByteStride == 0)
                 {
                     throw new VeldridException("Structured Buffer objects must have a non-zero StructureByteStride.");
@@ -278,6 +380,9 @@ namespace Veldrid
             return CreateSamplerCore(ref description);
         }
 
+        /// <summary></summary>
+        /// <param name="description"></param>
+        /// <returns></returns>
         protected abstract Sampler CreateSamplerCore(ref SamplerDescription description);
 
         /// <summary>
@@ -312,6 +417,9 @@ namespace Veldrid
             return CreateShaderCore(ref description);
         }
 
+        /// <summary></summary>
+        /// <param name="description"></param>
+        /// <returns></returns>
         protected abstract Shader CreateShaderCore(ref ShaderDescription description);
 
         /// <summary>
