@@ -118,10 +118,17 @@ namespace Veldrid.OpenGL
             _setSyncToVBlank = platformInfo.SetSyncToVerticalBlank;
             LoadGetString(_glContext, platformInfo.GetProcAddress);
             string version = Util.GetString(glGetString(StringName.Version));
+#if WEB
+            _backendType = GraphicsBackend.OpenGLES;
+#else
             _backendType = version.StartsWith("OpenGL ES") ? GraphicsBackend.OpenGLES : GraphicsBackend.OpenGL;
+#endif
 
             LoadAllFunctions(_glContext, platformInfo.GetProcAddress, _backendType == GraphicsBackend.OpenGLES);
 
+#if WEB
+            _extensions = new OpenGLExtensions(new HashSet<string>(), _backendType, 3, 0);
+#else
             int majorVersion, minorVersion;
             glGetIntegerv(GetPName.MajorVersion, &majorVersion);
             CheckLastError();
@@ -148,6 +155,7 @@ namespace Veldrid.OpenGL
             }
 
             _extensions = new OpenGLExtensions(extensions, _backendType, MajorVersion, MinorVersion);
+#endif
 
             bool drawIndirect = _extensions.DrawIndirect || _extensions.MultiDrawIndirect;
             _features = new GraphicsDeviceFeatures(
@@ -271,6 +279,8 @@ namespace Veldrid.OpenGL
 
             _executionThread = new ExecutionThread(this, _multiThreaded, _workItems, _makeCurrent, _glContext);
 
+            Console.WriteLine(_multiThreaded);
+
             if (!_multiThreaded)
             {
                 CommandListDescription clDesc;
@@ -295,11 +305,140 @@ namespace Veldrid.OpenGL
                     androidSource.Surface);
                 InitializeANativeWindow(options, aNativeWindow, swapchainDescription);
             }
+            else if (source is WebSwapchainSource webSource)
+            {
+                InitializeWeb(options, swapchainDescription);
+            }
             else
             {
                 throw new VeldridException(
                     "This function does not support creating an OpenGLES GraphicsDevice with the given SwapchainSource.");
             }
+        }
+
+        private void InitializeWeb(
+            GraphicsDeviceOptions options,
+            SwapchainDescription swapchainDescription)
+        {
+            IntPtr display = eglGetDisplay(0);
+            if (display == IntPtr.Zero)
+            {
+                throw new VeldridException($"Failed to get the default Web EGLDisplay: {eglGetError()}");
+            }
+
+            int major, minor;
+            if (eglInitialize(display, &major, &minor) == 0)
+            {
+                throw new VeldridException($"Failed to initialize EGL: {eglGetError()}");
+            }
+
+            int[] attribs =
+            {
+                EGL_RED_SIZE, 8,
+                EGL_GREEN_SIZE, 8,
+                EGL_BLUE_SIZE, 8,
+                EGL_ALPHA_SIZE, 8,
+                EGL_DEPTH_SIZE,
+                swapchainDescription.DepthFormat != null
+                    ? GetDepthBits(swapchainDescription.DepthFormat.Value)
+                    : 0,
+                EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+                EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+                EGL_NONE,
+            };
+
+            IntPtr* configs = stackalloc IntPtr[50];
+
+            fixed (int* attribsPtr = attribs)
+            {
+                int num_config;
+                if (eglChooseConfig(display, attribsPtr, configs, 50, &num_config) == 0)
+                {
+                    throw new VeldridException($"Failed to select a valid EGLConfig: {eglGetError()}");
+                }
+            }
+
+            IntPtr bestConfig = configs[0];
+
+            int format;
+            if (eglGetConfigAttrib(display, bestConfig, EGL_NATIVE_VISUAL_ID, &format) == 0)
+            {
+                throw new VeldridException($"Failed to get the EGLConfig's format: {eglGetError()}");
+            }
+
+            IntPtr eglWindowSurface = eglCreateWindowSurface(display, bestConfig, IntPtr.Zero, null);
+            if (eglWindowSurface == IntPtr.Zero)
+            {
+                throw new VeldridException(
+                    $"Failed to create an EGL surface from the Web: {eglGetError()}");
+            }
+
+            int* contextAttribs = stackalloc int[3];
+            contextAttribs[0] = EGL_CONTEXT_CLIENT_VERSION;
+            contextAttribs[1] = 2;
+            contextAttribs[2] = EGL_NONE;
+            IntPtr context = eglCreateContext(display, bestConfig, IntPtr.Zero, contextAttribs);
+            if (context == IntPtr.Zero)
+            {
+                throw new VeldridException($"Failed to create an EGLContext: " + eglGetError());
+            }
+
+            Action<IntPtr> makeCurrent = ctx =>
+            {
+                if (eglMakeCurrent(display, eglWindowSurface, eglWindowSurface, ctx) == 0)
+                {
+                    throw new VeldridException($"Failed to make the EGLContext {ctx} current: {eglGetError()}");
+                }
+            };
+
+            makeCurrent(context);
+
+            Action clearContext = () =>
+            {
+                if (eglMakeCurrent(display, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero) == 0)
+                {
+                    throw new VeldridException("Failed to clear the current EGLContext: " + eglGetError());
+                }
+            };
+
+            Action swapBuffers = () =>
+            {
+                if (eglSwapBuffers(display, eglWindowSurface) == 0)
+                {
+                    throw new VeldridException("Failed to swap buffers: " + eglGetError());
+                }
+            };
+
+            Action<bool> setSync = vsync =>
+            {
+                if (eglSwapInterval(display, vsync ? 1 : 0) == 0)
+                {
+                    throw new VeldridException($"Failed to set the swap interval: " + eglGetError());
+                }
+            };
+
+            // Set the desired initial state.
+            setSync(swapchainDescription.SyncToVerticalBlank);
+
+            Action<IntPtr> destroyContext = ctx =>
+            {
+                if (eglDestroyContext(display, ctx) == 0)
+                {
+                    throw new VeldridException($"Failed to destroy EGLContext {ctx}: {eglGetError()}");
+                }
+            };
+
+            OpenGLPlatformInfo platformInfo = new OpenGLPlatformInfo(
+                context,
+                eglGetProcAddress,
+                makeCurrent,
+                eglGetCurrentContext,
+                clearContext,
+                destroyContext,
+                swapBuffers,
+                setSync);
+
+            Init(options, platformInfo, swapchainDescription.Width, swapchainDescription.Height, true);
         }
 
         private void InitializeUIView(GraphicsDeviceOptions options, IntPtr uIViewPtr)

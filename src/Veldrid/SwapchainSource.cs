@@ -68,6 +68,9 @@ namespace Veldrid
         /// <see cref="GraphicsDevice"/> for the given Android Surface.</returns>
         public static SwapchainSource CreateAndroidSurface(IntPtr surfaceHandle, IntPtr jniEnv)
             => new AndroidSurfaceSwapchainSource(surfaceHandle, jniEnv);
+
+        public static SwapchainSource CreateWeb()
+            => new WebSwapchainSource();
     }
 
     internal class Win32SwapchainSource : SwapchainSource
@@ -135,6 +138,13 @@ namespace Veldrid
         {
             Surface = surfaceHandle;
             JniEnv = jniEnv;
+        }
+    }
+
+    internal class WebSwapchainSource : SwapchainSource
+    {
+        public WebSwapchainSource()
+        {
         }
     }
 }

@@ -5,7 +5,11 @@ namespace Veldrid.OpenGL.EGL
 {
     internal static unsafe class EGLNative
     {
+#if WEB
+        private const string LibName = "libEGL";
+#else
         private const string LibName = "libEGL.so";
+#endif
 
         public const int EGL_DRAW = 0x3059;
         public const int EGL_READ = 0x305A;

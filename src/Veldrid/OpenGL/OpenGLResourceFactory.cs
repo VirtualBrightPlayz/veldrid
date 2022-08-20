@@ -20,7 +20,9 @@ namespace Veldrid.OpenGL
 
         public override CommandList CreateCommandList(ref CommandListDescription description)
         {
-            return new OpenGLCommandList(_gd, ref description);
+            if (_gd.MultiThreaded)
+                return new OpenGLCommandList(_gd, ref description);
+            return _gd.ImmediateCommandList;
         }
 
         public override Framebuffer CreateFramebuffer(ref FramebufferDescription description)
