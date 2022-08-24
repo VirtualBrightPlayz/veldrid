@@ -141,7 +141,12 @@ namespace Veldrid.OpenGL
             LoadAllFunctions(_glContext, platformInfo.GetProcAddress, _backendType == GraphicsBackend.OpenGLES);
 
 #if WEB
-            _extensions = new OpenGLExtensions(new HashSet<string>(), _backendType, 3, 0);
+            byte* extsBytes = glGetString((StringName)StringNameIndexed.Extensions);
+            CheckLastError();
+            string exts = Marshal.PtrToStringAuto((IntPtr)extsBytes);
+            Console.WriteLine(exts);
+
+            _extensions = new OpenGLExtensions(new HashSet<string>(exts.Split(' ')), _backendType, 3, 0);
 #else
             int majorVersion, minorVersion;
             glGetIntegerv(GetPName.MajorVersion, &majorVersion);

@@ -74,6 +74,8 @@ namespace Veldrid
             IntPtr context = ImGui.CreateContext();
             ImGui.SetCurrentContext(context);
 
+            ImGui.GetIO().BackendFlags = ImGuiBackendFlags.None;
+
             ImGui.GetIO().Fonts.AddFontDefault();
             ImGui.GetIO().Fonts.Flags |= ImFontAtlasFlags.NoBakedLines;
 
@@ -631,7 +633,9 @@ namespace Veldrid
                 _vertexBuffer.Name = $"ImGui.NET Vertex Buffer";
             }
 
-            uint totalIBSize = (uint)(draw_data.TotalIdxCount * sizeof(ushort));
+            uint elementIndexSize = sizeof(ushort);
+
+            uint totalIBSize = (uint)(draw_data.TotalIdxCount * elementIndexSize);
             if (totalIBSize > _indexBuffer.SizeInBytes)
             {
                 _indexBuffer.Dispose();
@@ -651,9 +655,9 @@ namespace Veldrid
 
                 cl.UpdateBuffer(
                     _indexBuffer,
-                    indexOffsetInElements * sizeof(ushort),
+                    indexOffsetInElements * elementIndexSize,
                     cmd_list.IdxBuffer.Data,
-                    (uint)(cmd_list.IdxBuffer.Size * sizeof(ushort)));
+                    (uint)(cmd_list.IdxBuffer.Size * elementIndexSize));
 
                 vertexOffsetInVertices += (uint)cmd_list.VtxBuffer.Size;
                 indexOffsetInElements += (uint)cmd_list.IdxBuffer.Size;
@@ -715,7 +719,23 @@ namespace Veldrid
                             (uint)(pcmd.ClipRect.Z - pcmd.ClipRect.X),
                             (uint)(pcmd.ClipRect.W - pcmd.ClipRect.Y));
 
-                        cl.DrawIndexed(pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)idx_offset, (int)(pcmd.VtxOffset + vtx_offset), 0);
+
+                        if (_gd.BackendType == GraphicsBackend.OpenGLES)
+                        {
+                            ushort[] data = new ushort[cmd_list.IdxBuffer.Size];
+                            for (int k = 0; k < data.Length; k++)
+                            {
+                                data[k] = (ushort)(cmd_list.IdxBuffer[(int)(k)] + pcmd.VtxOffset + vtx_offset);
+                            }
+
+                            cl.UpdateBuffer(
+                                _indexBuffer,
+                                (uint)(idx_offset * elementIndexSize),
+                                ref data[0],
+                                (uint)(cmd_list.IdxBuffer.Size * elementIndexSize));
+                        }
+
+                        cl.DrawIndexed(pcmd.ElemCount, 1, pcmd.IdxOffset + (uint)idx_offset, _gd.BackendType == GraphicsBackend.OpenGLES ? 0 : (int)(pcmd.VtxOffset + vtx_offset), 0);
                     }
                 }
 
