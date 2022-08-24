@@ -136,7 +136,11 @@ namespace Veldrid.OpenGL
             _shadingLanguageVersion = Util.GetString(glGetString(StringName.ShadingLanguageVersion));
             _vendorName = Util.GetString(glGetString(StringName.Vendor));
             _deviceName = Util.GetString(glGetString(StringName.Renderer));
+        #if WEB
+            _backendType = GraphicsBackend.OpenGLES;
+        #else
             _backendType = _version.StartsWith("OpenGL ES") ? GraphicsBackend.OpenGLES : GraphicsBackend.OpenGL;
+        #endif
 
             LoadAllFunctions(_glContext, platformInfo.GetProcAddress, _backendType == GraphicsBackend.OpenGLES);
 
