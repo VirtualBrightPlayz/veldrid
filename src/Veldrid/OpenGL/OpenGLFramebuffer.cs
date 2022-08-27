@@ -26,6 +26,11 @@ namespace Veldrid.OpenGL
             : base(description.DepthTarget, description.ColorTargets)
         {
             _gd = gd;
+
+            if (!gd.MultiThreaded)
+            {
+                EnsureResourcesCreated();
+            }
         }
 
         public void EnsureResourcesCreated()

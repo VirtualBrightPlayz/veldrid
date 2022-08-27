@@ -443,7 +443,7 @@ namespace Veldrid.OpenGL
             }
             else if (source is WebSwapchainSource webSource)
             {
-                InitializeWeb(options, swapchainDescription);
+                InitializeWeb(options, swapchainDescription, webSource.platformInfo);
             }
             else
             {
@@ -641,8 +641,10 @@ namespace Veldrid.OpenGL
 
         private void InitializeWeb(
             GraphicsDeviceOptions options,
-            SwapchainDescription swapchainDescription)
+            SwapchainDescription swapchainDescription,
+            OpenGLPlatformInfo platformInfo)
         {
+            // /*
             IntPtr display = eglGetDisplay(0);
             if (display == IntPtr.Zero)
             {
@@ -751,15 +753,20 @@ namespace Veldrid.OpenGL
                 }
             };
 
-            OpenGLPlatformInfo platformInfo = new OpenGLPlatformInfo(
+            /*OpenGLPlatformInfo*/ platformInfo = new OpenGLPlatformInfo(
                 context,
+                #if WEB
+                emscripten_GetProcAddress,
+                #else
                 eglGetProcAddress,
+                #endif
                 makeCurrent,
                 eglGetCurrentContext,
                 clearContext,
                 destroyContext,
                 swapBuffers,
                 setSync);
+            // */
 
             Init(options, platformInfo, swapchainDescription.Width, swapchainDescription.Height, true);
         }
@@ -1917,7 +1924,7 @@ namespace Veldrid.OpenGL
                 }
                 else
                 {
-                    a();
+                    ExecuteWorkItem(new ExecutionThreadWorkItem(a));
                 }
             }
 
@@ -1937,15 +1944,20 @@ namespace Veldrid.OpenGL
 
             internal void WaitForIdle()
             {
+                ManualResetEventSlim mre = new ManualResetEventSlim();
                 if (_threaded)
                 {
-                    ManualResetEventSlim mre = new ManualResetEventSlim();
                     _workItems.Add(new ExecutionThreadWorkItem(mre, isFullFlush: false));
-                    mre.Wait();
-                    mre.Dispose();
-
-                    CheckExceptions();
                 }
+                else
+                {
+                    ExecuteWorkItem(new ExecutionThreadWorkItem(mre, isFullFlush: false));
+                }
+                mre.Wait();
+                mre.Dispose();
+
+                if (_threaded)
+                    CheckExceptions();
             }
 
             internal void SetSyncToVerticalBlank(bool value)
@@ -1956,7 +1968,7 @@ namespace Veldrid.OpenGL
                 }
                 else
                 {
-                    _gd._setSyncToVBlank(value);
+                    ExecuteWorkItem(new ExecutionThreadWorkItem(value));
                 }
             }
 
@@ -1968,8 +1980,7 @@ namespace Veldrid.OpenGL
                 }
                 else
                 {
-                    _gd._swapBuffers();
-                    _gd.FlushDisposables();
+                    ExecuteWorkItem(new ExecutionThreadWorkItem(WorkItemType.SwapBuffers));
                 }
             }
 
@@ -1987,7 +1998,8 @@ namespace Veldrid.OpenGL
                 mre.Wait();
                 mre.Dispose();
 
-                CheckExceptions();
+                if (_threaded)
+                    CheckExceptions();
             }
 
             internal void InitializeResource(OpenGLDeferredResource deferredResource)

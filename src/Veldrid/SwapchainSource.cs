@@ -87,9 +87,6 @@ namespace Veldrid
         /// </returns>
         public static SwapchainSource CreateNSView(IntPtr nsView)
             => new NSViewSwapchainSource(nsView);
-
-        public static SwapchainSource CreateWeb()
-            => new WebSwapchainSource();
     }
 
     internal class Win32SwapchainSource : SwapchainSource
@@ -182,8 +179,10 @@ namespace Veldrid
         }
     }
 
-    internal class WebSwapchainSource : SwapchainSource
+    public class WebSwapchainSource : SwapchainSource
     {
+        public OpenGL.OpenGLPlatformInfo platformInfo;
+
         public WebSwapchainSource()
         {
         }
