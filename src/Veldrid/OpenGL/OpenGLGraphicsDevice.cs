@@ -443,7 +443,7 @@ namespace Veldrid.OpenGL
             }
             else if (source is WebSwapchainSource webSource)
             {
-                InitializeWeb(options, swapchainDescription, webSource.platformInfo);
+                InitializeWeb(options, swapchainDescription);
             }
             else
             {
@@ -641,10 +641,8 @@ namespace Veldrid.OpenGL
 
         private void InitializeWeb(
             GraphicsDeviceOptions options,
-            SwapchainDescription swapchainDescription,
-            OpenGLPlatformInfo platformInfo)
+            SwapchainDescription swapchainDescription)
         {
-            // /*
             IntPtr display = eglGetDisplay(0);
             if (display == IntPtr.Zero)
             {
@@ -753,20 +751,15 @@ namespace Veldrid.OpenGL
                 }
             };
 
-            /*OpenGLPlatformInfo*/ platformInfo = new OpenGLPlatformInfo(
+            OpenGLPlatformInfo platformInfo = new OpenGLPlatformInfo(
                 context,
-                #if WEB
-                emscripten_GetProcAddress,
-                #else
                 eglGetProcAddress,
-                #endif
                 makeCurrent,
                 eglGetCurrentContext,
                 clearContext,
                 destroyContext,
                 swapBuffers,
                 setSync);
-            // */
 
             Init(options, platformInfo, swapchainDescription.Width, swapchainDescription.Height, true);
         }
